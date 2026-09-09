@@ -5,12 +5,13 @@
  * Junta as tres pecas: o site (WebContentsView), o qBittorrent embutido
  * (processo filho + WebUI API) e o player mpv (janela nativa acoplada).
  */
-const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, protocol, shell } = require('electron');
 const path = require('path');
 
 const config = require('./config');
 const paths = require('./paths');
 const library = require('./library');
+const metadados = require('./metadados');
 const player = require('./player');
 const qbit = require('./qbit');
 const site = require('./site');
@@ -54,6 +55,15 @@ const podeEmbutirVideo =
     process.platform === 'win32' || X11_NA_LINHA || (!SESSAO_WAYLAND && !!process.env.DISPLAY);
 
 app.setName('Torrange');
+
+/**
+ * As capas ficam nos dados do app, fora da pasta da interface, entao o
+ * file:// do renderer nao alcanca. Um esquema proprio resolve sem afrouxar a
+ * CSP: capa://img/<arquivo>, servido so a partir da pasta de capas.
+ */
+protocol.registerSchemesAsPrivileged([
+    { scheme: 'capa', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
 
 let janela = null;
 let monitor = null;
@@ -196,7 +206,7 @@ async function receberMagnet(magnet) {
 async function atualizar() {
     if (!qbitPronto || !janela || janela.isDestroyed()) return;
     try {
-        const biblioteca = await library.sincronizar();
+        const biblioteca = metadados.aplicar(await library.sincronizar());
         const fila = library.snapshot();
 
         // avisa quando um download termina
@@ -260,7 +270,53 @@ function registrarIpc() {
     });
     ipcMain.handle('fila:magnet', (_e, magnet) => receberMagnet(magnet));
 
-    ipcMain.handle('biblioteca:listar', () => library.listar());
+    ipcMain.handle('biblioteca:listar', () => metadados.aplicar(library.listar()));
+
+    // -------------------------------------------------- pastas e metadados
+    ipcMain.handle('biblioteca:pastas', () => metadados.pastasParaInterface());
+
+    ipcMain.handle('biblioteca:criar-pasta', (_e, dados) => metadados.criarPasta(dados || {}));
+
+    ipcMain.handle('biblioteca:editar-pasta', (_e, id, campos) => metadados.editarPasta(id, campos || {}));
+
+    ipcMain.handle('biblioteca:remover-pasta', (_e, id) => metadados.removerPasta(id));
+
+    ipcMain.handle('biblioteca:editar-titulo', async (_e, hash, campos) => {
+        metadados.editarTitulo(hash, campos || {});
+        await atualizar();
+        return true;
+    });
+
+    ipcMain.handle('biblioteca:editar-arquivo', async (_e, hash, caminho, nome) => {
+        metadados.editarArquivo(hash, caminho, nome);
+        await atualizar();
+        return true;
+    });
+
+    ipcMain.handle('biblioteca:capa', async (_e, alvo, origem) => {
+        try {
+            if (origem && origem.escolher) {
+                const r = await dialog.showOpenDialog(janela, {
+                    title: 'Escolher a imagem',
+                    properties: ['openFile'],
+                    filters: [{ name: 'Imagens', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif', 'bmp'] }],
+                });
+                if (r.canceled || !r.filePaths.length) return { cancelado: true };
+                origem = { arquivo: r.filePaths[0] };
+            }
+            await metadados.definirCapa(alvo, origem);
+            await atualizar();
+            return { ok: true };
+        } catch (erro) {
+            return { erro: erro.message };
+        }
+    });
+
+    ipcMain.handle('biblioteca:remover-capa', async (_e, alvo) => {
+        metadados.removerCapa(alvo);
+        await atualizar();
+        return true;
+    });
 
     ipcMain.handle('app:abrir-pasta', (_e, caminho) => {
         if (!caminho) return false;
@@ -374,6 +430,15 @@ if (!instanciaUnica) {
     });
 
     app.whenReady().then(() => {
+        protocol.handle('capa', (requisicao) => {
+            const nome = decodeURIComponent(new URL(requisicao.url).pathname.replace(/^\//, ''));
+            const capa = metadados.lerCapa(nome);
+            if (!capa) return new Response('', { status: 404 });
+            return new Response(capa.buffer, {
+                headers: { 'content-type': capa.mime, 'cache-control': 'no-cache' },
+            });
+        });
+
         registrarIpc();
         criarJanela();
         subirQbit();

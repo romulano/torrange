@@ -29,6 +29,18 @@ contextBridge.exposeInMainWorld('torrange', {
     biblioteca: {
         listar: () => ipcRenderer.invoke('biblioteca:listar'),
         abrirPasta: (caminho) => ipcRenderer.invoke('app:abrir-pasta', caminho),
+
+        pastas: () => ipcRenderer.invoke('biblioteca:pastas'),
+        criarPasta: (dados) => ipcRenderer.invoke('biblioteca:criar-pasta', dados),
+        editarPasta: (id, campos) => ipcRenderer.invoke('biblioteca:editar-pasta', id, campos),
+        removerPasta: (id) => ipcRenderer.invoke('biblioteca:remover-pasta', id),
+
+        editarTitulo: (hash, campos) => ipcRenderer.invoke('biblioteca:editar-titulo', hash, campos),
+        editarArquivo: (hash, caminho, nome) =>
+            ipcRenderer.invoke('biblioteca:editar-arquivo', hash, caminho, nome),
+
+        definirCapa: (alvo, origem) => ipcRenderer.invoke('biblioteca:capa', alvo, origem),
+        removerCapa: (alvo) => ipcRenderer.invoke('biblioteca:remover-capa', alvo),
     },
     player: {
         abrir: (opcoes) => ipcRenderer.invoke('player:abrir', opcoes),

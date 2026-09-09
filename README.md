@@ -17,10 +17,10 @@ Os instaladores estão publicados em
 
 | Sistema | Arquivo |
 | --- | --- |
-| Windows (instalador) | `Torrange-Setup-1.0.1.exe` |
-| Windows (portátil) | `Torrange-1.0.1-win.zip` |
-| Linux (Debian/Ubuntu) | `torrange_1.0.1_amd64.deb` |
-| Linux (universal) | `Torrange-1.0.1.AppImage` |
+| Windows (instalador) | `Torrange-Setup-1.0.2.exe` |
+| Windows (portátil) | `Torrange-1.0.2-win.zip` |
+| Linux (Debian/Ubuntu) | `torrange_1.0.2_amd64.deb` |
+| Linux (universal) | `Torrange-1.0.2.AppImage` |
 
 Os pacotes são autocontidos: trazem o Electron, o qBittorrent e o mpv dentro.
 Não é preciso instalar Node, npm nem o qBittorrent à parte.
@@ -44,7 +44,7 @@ Nada precisa ser instalado à parte.
 **Linux — Debian/Ubuntu**
 
 ```bash
-sudo apt install ./dist/torrange_1.0.1_amd64.deb
+sudo apt install ./dist/torrange_1.0.2_amd64.deb
 torrange                     # ou pelo menu de aplicativos: "Torrange"
 ```
 
@@ -54,14 +54,14 @@ Para remover: `sudo apt remove torrange`.
 **Linux — qualquer distro (AppImage)**
 
 ```bash
-chmod +x dist/Torrange-1.0.1.AppImage
-./dist/Torrange-1.0.1.AppImage
+chmod +x dist/Torrange-1.0.2.AppImage
+./dist/Torrange-1.0.2.AppImage
 ```
 
 **Windows**
 
-Execute `Torrange-Setup-1.0.1.exe` (instalador, cria atalhos) ou descompacte
-`Torrange-1.0.1-win.zip` e rode `Torrange.exe` (portátil, não instala nada).
+Execute `Torrange-Setup-1.0.2.exe` (instalador, cria atalhos) ou descompacte
+`Torrange-1.0.2-win.zip` e rode `Torrange.exe` (portátil, não instala nada).
 
 **Primeiro uso**
 
@@ -88,10 +88,10 @@ Os instaladores saem em `dist/`:
 
 | Arquivo | Plataforma | Tamanho |
 |---|---|---|
-| `Torrange-Setup-1.0.1.exe` | Windows — instalador | 154 MB |
-| `Torrange-1.0.1-win.zip` | Windows — portátil | 207 MB |
-| `Torrange-1.0.1.AppImage` | Linux — universal | 185 MB |
-| `torrange_1.0.1_amd64.deb` | Linux — Debian/Ubuntu | 147 MB |
+| `Torrange-Setup-1.0.2.exe` | Windows — instalador | 154 MB |
+| `Torrange-1.0.2-win.zip` | Windows — portátil | 207 MB |
+| `Torrange-1.0.2.AppImage` | Linux — universal | 185 MB |
+| `torrange_1.0.2_amd64.deb` | Linux — Debian/Ubuntu | 147 MB |
 
 Para gerar só uma plataforma:
 
@@ -124,9 +124,15 @@ Não dependem do site real nem de credenciais: um servidor local reproduz o mesm
 HTML do botão do torrange e serve um `.torrent` válido.
 
 ```bash
-npm run teste                          # site, rótulo "Baixar" e envio ao qBittorrent
-npm run teste:player -- /caminho/video.mkv   # biblioteca e player
+npm run teste                                     # site, rótulo "Baixar" e qBittorrent
+npm run teste:player -- /caminho/video.mkv        # player: faixas, busca, pausa
+npm run teste:biblioteca -- /caminho/video.mkv    # pastas, capas e edição
+npm run teste:pacote                              # confere os instaladores gerados
 ```
+
+Eles rodam com uma pasta de dados própria (`--user-data-dir`), então não brigam
+pelo lock de instância única nem tocam na configuração, na fila de torrents ou
+na biblioteca do app que você já tem instalado.
 
 O teste do player gera um `.torrent` do arquivo que você indicar, manda pelo
 app, espera o qBittorrent conferir os pedaços e marcar como concluído, abre o
@@ -203,6 +209,37 @@ guarda o catálogo e a posição de reprodução de cada arquivo. Um título con
 disponível para assistir mesmo se o torrent for removido da fila com os arquivos
 mantidos.
 
+### Organizando a biblioteca
+
+`src/main/metadados.js` guarda o que você edita — pastas, capas, nomes,
+descrições e etiquetas — num arquivo próprio (`organizacao.json`), separado do
+catálogo. Isso é proposital: o catálogo é reconstruído a cada segundo a partir
+do qBittorrent, e o que você editou não pode ser atropelado por essa
+sincronização.
+
+**As pastas são virtuais.** Elas existem só dentro do app: criar, renomear,
+mover ou excluir uma pasta nunca toca num arquivo em disco e nunca mexe no
+torrent que o alimenta — então nada quebra o seeding. Excluir uma pasta faz o
+que estava dentro subir um nível; nada se perde.
+
+| O que dá para fazer | Onde |
+| --- | --- |
+| Criar pastas e subpastas | Biblioteca → **+ Nova pasta** |
+| Trocar o nome de exibição | Editar → **Nome** (o arquivo em disco não é renomeado) |
+| Escrever uma descrição | Editar → **Descrição** (em pastas e em títulos) |
+| Etiquetas com filtro | Editar → **Etiquetas**; os chips no topo filtram |
+| Nomear cada episódio | Editar → **Nome de cada arquivo** (quando há vários vídeos) |
+| Mover para uma pasta | Editar → **Pasta** |
+| Capa por arquivo ou link | Editar → **Escolher imagem…** ou colar a URL |
+
+As capas são **copiadas** para os dados do app, então a biblioteca não quebra se
+você mover ou apagar a imagem original depois. Elas são servidas por um esquema
+próprio (`capa://`), que só entrega arquivos de dentro da pasta de capas — um
+caminho como `capa://img/../../config.json` é recusado.
+
+A busca e o filtro por etiqueta procuram no acervo inteiro, não só na pasta
+aberta.
+
 ---
 
 ## Quando o vídeo não aparece
@@ -231,6 +268,7 @@ src/main/
     site.js                   WebContentsView do site + interceptação
     player.js                 mpv acoplado + IPC
     library.js                catálogo e posições de reprodução
+    metadados.js              pastas, capas, nomes, descrições e etiquetas
     config.js, paths.js       ajustes e caminhos
 src/preload/
     site-inject.js            roda dentro do site (rótulo do botão)
@@ -239,6 +277,8 @@ src/renderer/                 interface (abas, fila, biblioteca, player)
 testes/
     e2e.js                    site, rótulo do botão e envio ao qBittorrent
     player.js                 biblioteca e player com um MKV real
+    biblioteca.js             pastas, capas e edição
+    pacote.js                 verifica os instaladores gerados
     cdp.js                    utilidades de DevTools Protocol
     servidor-falso.js         página e .torrent de teste
 ```

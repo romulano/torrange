@@ -213,64 +213,429 @@ async function confirmarRemocao(t) {
 
 // -------------------------------------------------------------- biblioteca
 
-function renderBiblioteca(forcar) {
-    const termo = filtroBiblioteca.trim().toLowerCase();
-    const assinatura =
-        termo +
-        '#' +
-        biblioteca
-            .map((e) => `${e.hash}:${e.estado}:${(e.progresso * 100) | 0}:${e.arquivos.length}:${e.ultimoArquivo || ''}`)
-            .join('|');
-    if (!forcar && !mudou('biblioteca', assinatura)) return;
+let pastaAtual = null;      // null = raiz
+let pastas = [];
+let filtroEtiqueta = null;
 
-    const alvo = $('#grade-biblioteca');
-    const itens = termo
-        ? biblioteca.filter((e) => e.nome.toLowerCase().includes(termo))
-        : biblioteca;
+async function carregarPastas() {
+    pastas = (await api.biblioteca.pastas()) || [];
+}
 
-    $('#vazio-biblioteca').hidden = itens.length > 0;
+function pastaPorId(id) {
+    return pastas.find((p) => p.id === id) || null;
+}
+
+function filhasDe(id) {
+    return pastas.filter((p) => (p.pai || null) === (id || null));
+}
+
+/** Quantos titulos a pasta guarda, contando as subpastas. */
+function contarNaPasta(id, vistos = new Set()) {
+    if (vistos.has(id)) return 0;
+    vistos.add(id);
+    const diretos = biblioteca.filter((e) => (e.pasta || null) === id).length;
+    return filhasDe(id).reduce((total, p) => total + contarNaPasta(p.id, vistos), diretos);
+}
+
+function trilhaDe(id) {
+    const caminho = [];
+    const vistos = new Set();
+    let atual = id ? pastaPorId(id) : null;
+    while (atual && !vistos.has(atual.id)) {
+        caminho.unshift(atual);
+        vistos.add(atual.id);
+        atual = atual.pai ? pastaPorId(atual.pai) : null;
+    }
+    return caminho;
+}
+
+function entrarNaPasta(id) {
+    pastaAtual = id;
+    filtroEtiqueta = null;
+    $('#busca-biblioteca').value = '';
+    filtroBiblioteca = '';
+    renderBiblioteca(true);
+}
+
+function renderCaminho() {
+    const alvo = $('#caminho-biblioteca');
     alvo.replaceChildren();
 
-    for (const e of itens) {
-        const cartao = elemento('div', 'cartao');
-        cartao.append(elemento('h3', null, e.nome));
+    const raiz = elemento('button', pastaAtual ? '' : 'atual', 'Biblioteca');
+    raiz.addEventListener('click', () => entrarNaPasta(null));
+    alvo.append(raiz);
 
-        const meta = elemento('div', 'meta');
-        const partes = [tamanho(e.tamanho), rotuloEstado(e.estado)];
-        if (!e.pronto) partes.push(`${(e.progresso * 100).toFixed(0)}% baixado`);
-        meta.textContent = partes.join(' · ');
-        cartao.append(meta);
+    const caminho = trilhaDe(pastaAtual);
+    caminho.forEach((p, i) => {
+        alvo.append(elemento('span', 'separador', '/'));
+        const b = elemento('button', i === caminho.length - 1 ? 'atual' : '', p.nome);
+        b.addEventListener('click', () => entrarNaPasta(p.id));
+        alvo.append(b);
+    });
+}
 
-        const lista = elemento('div', 'arquivos');
-        for (const a of e.arquivos) {
-            const linha = elemento('div', `arquivo${a.existe ? '' : ' indisponivel'}`);
-            linha.append(elemento('span', null, '🎬'));
-            linha.append(elemento('span', 'nome', a.nome));
-            const pos = e.posicoes && e.posicoes[a.caminho];
-            if (pos && pos.segundos > 30) {
-                linha.append(elemento('span', 'retomar', `retomar ${relogio(pos.segundos)}`));
-            }
-            linha.append(elemento('span', 'meta', tamanho(a.tamanho)));
-            if (a.existe) {
-                linha.addEventListener('click', () => reproduzir(e, a));
-            }
-            lista.append(linha);
-        }
-        cartao.append(lista);
+function renderEtiquetas() {
+    const alvo = $('#etiquetas-filtro');
+    alvo.replaceChildren();
 
-        const rodape = elemento('div', 'rodape');
-        const assistir = elemento('button', 'botao', e.pronto ? 'Assistir' : 'Assistir agora');
-        assistir.disabled = !e.reproduzivel;
-        assistir.addEventListener('click', () => reproduzirEntrada(e));
-        rodape.append(assistir);
+    const todas = [...new Set(biblioteca.flatMap((e) => e.etiquetas || []))].sort((a, b) =>
+        a.localeCompare(b, 'pt-BR')
+    );
+    if (!todas.length) return;
 
-        const pasta = elemento('button', 'botao secundario', 'Abrir pasta');
-        pasta.addEventListener('click', () => api.biblioteca.abrirPasta(e.principal || e.savePath));
-        rodape.append(pasta);
-        cartao.append(rodape);
-
-        alvo.append(cartao);
+    for (const etiqueta of todas) {
+        const chip = elemento('button', `etiqueta-filtro${filtroEtiqueta === etiqueta ? ' ativa' : ''}`, etiqueta);
+        chip.addEventListener('click', () => {
+            filtroEtiqueta = filtroEtiqueta === etiqueta ? null : etiqueta;
+            renderBiblioteca(true);
+        });
+        alvo.append(chip);
     }
+}
+
+function caixaDeCapa(url, simbolo) {
+    const capa = elemento('div', 'capa');
+    if (url) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        img.addEventListener('error', () => {
+            img.remove();
+            capa.textContent = simbolo;
+        });
+        capa.append(img);
+    } else {
+        capa.textContent = simbolo;
+    }
+    return capa;
+}
+
+function cartaoDePasta(pasta) {
+    const cartao = elemento('div', 'cartao pasta');
+    const topo = elemento('div', 'cartao-topo');
+    topo.append(caixaDeCapa(pasta.capa, '📁'));
+
+    const info = elemento('div', 'cartao-info');
+    info.append(elemento('h3', null, pasta.nome));
+    const quantos = contarNaPasta(pasta.id);
+    const subpastas = filhasDe(pasta.id).length;
+    const partes = [`${quantos} ${quantos === 1 ? 'título' : 'títulos'}`];
+    if (subpastas) partes.push(`${subpastas} ${subpastas === 1 ? 'subpasta' : 'subpastas'}`);
+    info.append(elemento('div', 'meta', partes.join(' · ')));
+    if (pasta.descricao) info.append(elemento('div', 'descricao', pasta.descricao));
+    topo.append(info);
+    cartao.append(topo);
+
+    cartao.addEventListener('click', (evento) => {
+        if (evento.target.closest('button')) return;
+        entrarNaPasta(pasta.id);
+    });
+
+    const rodape = elemento('div', 'rodape');
+    const abrir = elemento('button', 'botao', 'Abrir');
+    abrir.addEventListener('click', () => entrarNaPasta(pasta.id));
+    rodape.append(abrir);
+
+    const editar = elemento('button', 'botao secundario', 'Editar');
+    editar.addEventListener('click', () => abrirModal('pasta', pasta));
+    rodape.append(editar);
+
+    cartao.append(rodape);
+    return cartao;
+}
+
+function cartaoDeTitulo(e) {
+    const cartao = elemento('div', 'cartao');
+
+    const topo = elemento('div', 'cartao-topo');
+    topo.append(caixaDeCapa(e.capa, '🎬'));
+
+    const info = elemento('div', 'cartao-info');
+    info.append(elemento('h3', null, e.nome));
+
+    const partes = [tamanho(e.tamanho), rotuloEstado(e.estado)];
+    if (!e.pronto) partes.push(`${(e.progresso * 100).toFixed(0)}% baixado`);
+    info.append(elemento('div', 'meta', partes.join(' · ')));
+
+    if (e.etiquetas && e.etiquetas.length) {
+        const chips = elemento('div', 'chips');
+        for (const etiqueta of e.etiquetas) chips.append(elemento('span', 'chip', etiqueta));
+        info.append(chips);
+    }
+    if (e.descricao) info.append(elemento('div', 'descricao', e.descricao));
+
+    topo.append(info);
+    cartao.append(topo);
+
+    const lista = elemento('div', 'arquivos');
+    for (const a of e.arquivos) {
+        const linha = elemento('div', `arquivo${a.existe ? '' : ' indisponivel'}`);
+        linha.append(elemento('span', null, '🎬'));
+        linha.append(elemento('span', 'nome', a.nome));
+        const pos = e.posicoes && e.posicoes[a.caminho];
+        if (pos && pos.segundos > 30) {
+            linha.append(elemento('span', 'retomar', `retomar ${relogio(pos.segundos)}`));
+        }
+        linha.append(elemento('span', 'meta', tamanho(a.tamanho)));
+        if (a.existe) linha.addEventListener('click', () => reproduzir(e, a));
+        lista.append(linha);
+    }
+    cartao.append(lista);
+
+    const rodape = elemento('div', 'rodape');
+    const assistir = elemento('button', 'botao', e.pronto ? 'Assistir' : 'Assistir agora');
+    assistir.disabled = !e.reproduzivel;
+    assistir.addEventListener('click', () => reproduzirEntrada(e));
+    rodape.append(assistir);
+
+    const editar = elemento('button', 'botao secundario', 'Editar');
+    editar.addEventListener('click', () => abrirModal('titulo', e));
+    rodape.append(editar);
+
+    const pasta = elemento('button', 'botao secundario', 'Abrir pasta');
+    pasta.addEventListener('click', () => api.biblioteca.abrirPasta(e.principal || e.savePath));
+    rodape.append(pasta);
+
+    cartao.append(rodape);
+    return cartao;
+}
+
+function combina(e, termo) {
+    if (!termo) return true;
+    const campos = [e.nome, e.nomeOriginal, e.descricao, ...(e.etiquetas || [])];
+    return campos.some((c) => (c || '').toLowerCase().includes(termo));
+}
+
+function renderBiblioteca(forcar) {
+    const termo = filtroBiblioteca.trim().toLowerCase();
+    const assinatura = [
+        termo,
+        pastaAtual || '',
+        filtroEtiqueta || '',
+        pastas.map((p) => `${p.id}:${p.nome}:${p.pai || ''}:${p.capa || ''}:${p.descricao}`).join('|'),
+        biblioteca
+            .map((e) =>
+                [
+                    e.hash, e.estado, (e.progresso * 100) | 0, e.arquivos.length,
+                    e.nome, e.capa || '', (e.etiquetas || []).join(','), e.pasta || '', e.descricao || '',
+                ].join(':')
+            )
+            .join('|'),
+    ].join('#');
+    if (!forcar && !mudou('biblioteca', assinatura)) return;
+
+    renderCaminho();
+    renderEtiquetas();
+
+    const alvo = $('#grade-biblioteca');
+    alvo.replaceChildren();
+
+    // Buscando ou filtrando por etiqueta, procuramos no acervo inteiro --
+    // limitar a pasta atual esconderia justamente o que se procura.
+    const buscando = !!termo || !!filtroEtiqueta;
+
+    const titulos = biblioteca.filter((e) => {
+        if (filtroEtiqueta && !(e.etiquetas || []).includes(filtroEtiqueta)) return false;
+        if (buscando) return combina(e, termo);
+        return (e.pasta || null) === pastaAtual;
+    });
+
+    if (!buscando) {
+        for (const pasta of filhasDe(pastaAtual)) alvo.append(cartaoDePasta(pasta));
+    }
+    for (const e of titulos) alvo.append(cartaoDeTitulo(e));
+
+    const vazio = $('#vazio-biblioteca');
+    vazio.hidden = alvo.childElementCount > 0;
+    vazio.textContent = buscando
+        ? 'Nada encontrado com esse filtro.'
+        : pastaAtual
+          ? 'Pasta vazia. Edite um título e escolha esta pasta para trazê-lo para cá.'
+          : 'Nada por aqui ainda. O que você baixar aparece nesta aba.';
+}
+
+// ---------------------------------------------------------- painel de edicao
+
+let alvoDoModal = null; // { tipo: 'pasta' | 'titulo', dados }
+
+function opcoesDePasta(select, selecionada, excluir) {
+    select.replaceChildren();
+    const raiz = elemento('option', null, '— nenhuma (raiz) —');
+    raiz.value = '';
+    select.append(raiz);
+
+    const proibidas = new Set();
+    if (excluir) {
+        // uma pasta nao pode ser movida para dentro de si mesma nem de suas filhas
+        const marcar = (id) => {
+            proibidas.add(id);
+            filhasDe(id).forEach((f) => marcar(f.id));
+        };
+        marcar(excluir);
+    }
+
+    for (const p of pastas) {
+        if (proibidas.has(p.id)) continue;
+        const op = elemento('option', null, trilhaDe(p.id).map((x) => x.nome).join(' / '));
+        op.value = p.id;
+        select.append(op);
+    }
+    select.value = selecionada || '';
+}
+
+function abrirModal(tipo, dados) {
+    alvoDoModal = { tipo, dados };
+
+    $('#modal-titulo').textContent = tipo === 'pasta' ? 'Editar pasta' : 'Editar título';
+    $('#campo-nome').value = dados.nome || '';
+    $('#campo-descricao').value = dados.descricao || '';
+    $('#nome-original').textContent =
+        tipo === 'titulo' && dados.nomeOriginal && dados.nomeOriginal !== dados.nome
+            ? `original: ${dados.nomeOriginal}`
+            : '';
+
+    $('#bloco-etiquetas').hidden = tipo === 'pasta';
+    $('#campo-etiquetas').value = (dados.etiquetas || []).join(', ');
+
+    opcoesDePasta($('#campo-pasta'), tipo === 'pasta' ? dados.pai : dados.pasta, tipo === 'pasta' ? dados.id : null);
+
+    const blocoEpisodios = $('#bloco-episodios');
+    const listaEpisodios = $('#lista-episodios');
+    listaEpisodios.replaceChildren();
+    const varios = tipo === 'titulo' && dados.arquivos && dados.arquivos.length > 1;
+    blocoEpisodios.hidden = !varios;
+    if (varios) {
+        for (const a of dados.arquivos) {
+            const campo = document.createElement('input');
+            campo.type = 'text';
+            campo.value = a.nome;
+            campo.placeholder = a.nomeOriginal || a.nome;
+            campo.dataset.caminho = a.caminho;
+            listaEpisodios.append(campo);
+        }
+    }
+
+    $('#btn-modal-excluir').hidden = tipo !== 'pasta';
+    $('#campo-capa-url').value = '';
+    atualizarPreviaCapa(dados.capa);
+
+    $('#modal').hidden = false;
+    $('#campo-nome').focus();
+}
+
+function atualizarPreviaCapa(url) {
+    const previa = $('#modal-previa');
+    previa.replaceChildren();
+    if (url) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        previa.append(img);
+    } else {
+        previa.textContent = 'sem capa';
+    }
+}
+
+function fecharModal() {
+    $('#modal').hidden = true;
+    alvoDoModal = null;
+}
+
+function alvoDaCapa() {
+    return {
+        tipo: alvoDoModal.tipo,
+        id: alvoDoModal.tipo === 'pasta' ? alvoDoModal.dados.id : alvoDoModal.dados.hash,
+    };
+}
+
+/** Depois de trocar a capa, relê o item para mostrar a imagem nova na prévia. */
+async function recarregarPrevia() {
+    if (!alvoDoModal) return;
+    if (alvoDoModal.tipo === 'pasta') {
+        await carregarPastas();
+        const p = pastaPorId(alvoDoModal.dados.id);
+        if (p) {
+            alvoDoModal.dados = p;
+            atualizarPreviaCapa(p.capa);
+        }
+    } else {
+        biblioteca = (await api.biblioteca.listar()) || [];
+        const e = biblioteca.find((x) => x.hash === alvoDoModal.dados.hash);
+        if (e) {
+            alvoDoModal.dados = e;
+            atualizarPreviaCapa(e.capa);
+        }
+    }
+    renderBiblioteca(true);
+}
+
+async function definirCapa(origem) {
+    if (!alvoDoModal) return;
+    const r = await api.biblioteca.definirCapa(alvoDaCapa(), origem);
+    if (r && r.cancelado) return;
+    if (r && r.erro) {
+        aviso(`Não consegui usar essa imagem: ${r.erro}`, 'erro');
+        return;
+    }
+    await recarregarPrevia();
+    aviso('Capa atualizada.', 'ok');
+}
+
+async function salvarModal() {
+    if (!alvoDoModal) return;
+    const { tipo, dados } = alvoDoModal;
+    const nome = $('#campo-nome').value;
+    const descricao = $('#campo-descricao').value;
+    const pastaEscolhida = $('#campo-pasta').value || null;
+
+    if (tipo === 'pasta') {
+        await api.biblioteca.editarPasta(dados.id, { nome, descricao, pai: pastaEscolhida });
+        await carregarPastas();
+    } else {
+        await api.biblioteca.editarTitulo(dados.hash, {
+            nome,
+            descricao,
+            etiquetas: $('#campo-etiquetas').value,
+            pasta: pastaEscolhida,
+        });
+        for (const campo of $$('#lista-episodios input')) {
+            const original = (dados.arquivos.find((a) => a.caminho === campo.dataset.caminho) || {}).nomeOriginal;
+            const valor = campo.value.trim();
+            await api.biblioteca.editarArquivo(dados.hash, campo.dataset.caminho, valor === original ? '' : valor);
+        }
+        biblioteca = (await api.biblioteca.listar()) || [];
+    }
+
+    fecharModal();
+    renderBiblioteca(true);
+    aviso('Alterações salvas.', 'ok');
+}
+
+async function excluirPastaDoModal() {
+    if (!alvoDoModal || alvoDoModal.tipo !== 'pasta') return;
+    const pasta = alvoDoModal.dados;
+    const quantos = contarNaPasta(pasta.id);
+    const texto = quantos
+        ? `Excluir a pasta "${pasta.nome}"?\n\nOs ${quantos} título(s) dentro dela sobem um nível — nenhum arquivo em disco é apagado.`
+        : `Excluir a pasta "${pasta.nome}"?`;
+    if (!window.confirm(texto)) return;
+
+    await api.biblioteca.removerPasta(pasta.id);
+    await carregarPastas();
+    if (pastaAtual === pasta.id) pastaAtual = pasta.pai || null;
+    biblioteca = (await api.biblioteca.listar()) || [];
+    fecharModal();
+    renderBiblioteca(true);
+    aviso('Pasta excluída.', 'ok');
+}
+
+async function criarPasta() {
+    const nome = window.prompt('Nome da nova pasta:', 'Nova pasta');
+    if (!nome) return;
+    await api.biblioteca.criarPasta({ nome, pai: pastaAtual });
+    await carregarPastas();
+    renderBiblioteca(true);
+    aviso('Pasta criada.', 'ok');
 }
 
 function reproduzirEntrada(e) {
@@ -599,6 +964,27 @@ function ligarEventos() {
         filtroBiblioteca = e.target.value;
         renderBiblioteca(true);
     });
+    $('#btn-nova-pasta').addEventListener('click', criarPasta);
+
+    // painel de edicao
+    $('#btn-modal-cancelar').addEventListener('click', fecharModal);
+    $('#modal-fundo').addEventListener('click', fecharModal);
+    $('#btn-modal-salvar').addEventListener('click', salvarModal);
+    $('#btn-modal-excluir').addEventListener('click', excluirPastaDoModal);
+    $('#btn-capa-arquivo').addEventListener('click', () => definirCapa({ escolher: true }));
+    $('#btn-capa-url').addEventListener('click', () => {
+        const url = $('#campo-capa-url').value.trim();
+        if (!/^https?:\/\//i.test(url)) {
+            aviso('Cole um link que comece com http:// ou https://', 'erro');
+            return;
+        }
+        definirCapa({ url });
+    });
+    $('#btn-capa-remover').addEventListener('click', async () => {
+        if (!alvoDoModal) return;
+        await api.biblioteca.removerCapa(alvoDaCapa());
+        await recarregarPrevia();
+    });
 
     // ajustes
     $('#btn-pasta').addEventListener('click', async () => {
@@ -672,6 +1058,13 @@ function ligarEventos() {
 
     // teclado
     document.addEventListener('keydown', (evento) => {
+        if (!$('#modal').hidden) {
+            if (evento.key === 'Escape') {
+                evento.preventDefault();
+                fecharModal();
+            }
+            return; // com o painel aberto, nenhum atalho do player responde
+        }
         if (/^(INPUT|SELECT|TEXTAREA)$/.test(evento.target.tagName)) return;
         if (abaAtual !== 'player') return;
         const acoes = {
@@ -742,6 +1135,7 @@ function ligarEventos() {
     trocarAba('site');
     fila = (await api.fila.listar()) || [];
     biblioteca = (await api.biblioteca.listar()) || [];
+    await carregarPastas();
     renderFila(true);
     renderBiblioteca(true);
 })();

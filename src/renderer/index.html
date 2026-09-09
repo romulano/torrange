@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'">
+          content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: capa:; font-src 'self'">
     <title>Torrange</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -52,11 +52,13 @@
     <!-- ------------------------------------------------------ biblioteca -->
     <section class="tela" id="tela-biblioteca">
         <div class="cabecalho-tela">
-            <h1>Biblioteca</h1>
+            <nav class="caminho" id="caminho-biblioteca"></nav>
             <div class="acoes-cabecalho">
-                <input type="search" id="busca-biblioteca" placeholder="Filtrar por nome…">
+                <input type="search" id="busca-biblioteca" placeholder="Filtrar por nome, etiqueta ou descrição…">
+                <button class="botao secundario" id="btn-nova-pasta">+ Nova pasta</button>
             </div>
         </div>
+        <div class="etiquetas-filtro" id="etiquetas-filtro"></div>
         <div class="grade" id="grade-biblioteca"></div>
         <p class="vazio" id="vazio-biblioteca">Nada por aqui ainda. O que você baixar aparece nesta aba.</p>
     </section>
@@ -171,6 +173,60 @@
     </section>
 
 </main>
+
+<div class="modal" id="modal" hidden>
+    <div class="modal-fundo" id="modal-fundo"></div>
+    <div class="modal-caixa" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+        <h2 id="modal-titulo">Editar</h2>
+
+        <div class="modal-corpo">
+            <div class="modal-capa">
+                <div class="previa" id="modal-previa"></div>
+                <button class="botao secundario" id="btn-capa-arquivo">Escolher imagem…</button>
+                <div class="linha">
+                    <input type="text" id="campo-capa-url" placeholder="ou cole o link de uma imagem">
+                    <button class="botao secundario" id="btn-capa-url">Usar</button>
+                </div>
+                <button class="botao secundario" id="btn-capa-remover">Remover capa</button>
+            </div>
+
+            <div class="modal-campos">
+                <label class="campo">
+                    <span>Nome</span>
+                    <input type="text" id="campo-nome">
+                    <small class="original" id="nome-original"></small>
+                </label>
+
+                <label class="campo">
+                    <span>Descrição</span>
+                    <textarea id="campo-descricao" rows="5"></textarea>
+                </label>
+
+                <label class="campo" id="bloco-etiquetas">
+                    <span>Etiquetas <small>separadas por vírgula</small></span>
+                    <input type="text" id="campo-etiquetas" placeholder="ação, assistido, favorito">
+                </label>
+
+                <label class="campo" id="bloco-pasta">
+                    <span>Pasta</span>
+                    <select id="campo-pasta"></select>
+                </label>
+
+                <div class="campo" id="bloco-episodios" hidden>
+                    <span>Nome de cada arquivo</span>
+                    <div class="episodios" id="lista-episodios"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-rodape">
+            <button class="botao secundario perigo" id="btn-modal-excluir" hidden>Excluir pasta</button>
+            <span class="espaco"></span>
+            <button class="botao secundario" id="btn-modal-cancelar">Cancelar</button>
+            <button class="botao" id="btn-modal-salvar">Salvar</button>
+        </div>
+    </div>
+</div>
 
 <div id="avisos"></div>
 
