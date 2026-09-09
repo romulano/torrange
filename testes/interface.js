@@ -51,9 +51,18 @@ const ABAS = [
 
     const ambiente = { ...process.env };
     delete ambiente.ELECTRON_RUN_AS_NODE;
-    const app = spawn(require('electron'),
-        ['.', `--remote-debugging-port=${PORTA_CDP}`, `--user-data-dir=${perfil}`],
-        { cwd: RAIZ, env: ambiente, stdio: ['ignore', 'pipe', 'pipe'] });
+
+    // TORRANGE_BIN aponta para um app JA EMPACOTADO (AppRun da AppImage, por
+    // exemplo). Sem a variavel, roda o codigo-fonte deste diretorio.
+    const empacotado = process.env.TORRANGE_BIN;
+    const app = empacotado
+        ? spawn(empacotado, [`--remote-debugging-port=${PORTA_CDP}`, `--user-data-dir=${perfil}`],
+            { env: ambiente, stdio: ['ignore', 'pipe', 'pipe'] })
+        : spawn(require('electron'),
+            ['.', `--remote-debugging-port=${PORTA_CDP}`, `--user-data-dir=${perfil}`],
+            { cwd: RAIZ, env: ambiente, stdio: ['ignore', 'pipe', 'pipe'] });
+
+    console.log(`  testando: ${empacotado || 'código-fonte'}\n`);
 
     let ui = null;
     const errosDeConsole = [];
