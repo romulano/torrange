@@ -15,7 +15,8 @@
     "teste": "node testes/e2e.js",
     "teste:player": "node testes/player.js",
     "teste:pacote": "node testes/pacote.js",
-    "teste:biblioteca": "node testes/biblioteca.js"
+    "teste:biblioteca": "node testes/biblioteca.js",
+    "teste:interface": "node testes/interface.js"
   },
   "devDependencies": {
     "electron": "^44.3.0",

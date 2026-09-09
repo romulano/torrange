@@ -16,6 +16,14 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * O [hidden] do navegador vem da folha de estilo do agente, que perde para
+ * QUALQUER regra nossa. Sem este !important, um `.modal { display: grid }`
+ * deixa o painel de edicao permanentemente aberto por cima da interface --
+ * foi o que aconteceu na 1.0.2. Vale para todo elemento com [hidden].
+ */
+[hidden] { display: none !important; }
+
 html, body {
     margin: 0;
     height: 100%;
