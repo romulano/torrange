@@ -1,0 +1,64 @@
+appId: com.torrange.desktop
+productName: Torrange
+copyright: Copyright (c) 2026 Torrange
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - src/**/*
+  - package.json
+  - "!**/*.map"
+
+# Os binarios de terceiros (qbittorrent-nox e mpv) sao empacotados por plataforma.
+# Eles caem em <resources>/bin/ dentro do app instalado.
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+  extraResources:
+    - from: resources/bin/win
+      to: bin
+      filter: ["**/*"]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Torrange
+  artifactName: Torrange-Setup-${version}.${ext}
+
+linux:
+  icon: build/icon.png
+  category: AudioVideo
+  synopsis: Cliente Torrange com qBittorrent e player integrados
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  extraResources:
+    - from: resources/bin/linux
+      to: bin
+      filter: ["**/*"]
+
+appImage:
+  artifactName: Torrange-${version}.${ext}
+
+deb:
+  artifactName: torrange_${version}_amd64.${ext}
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libsecret-1-0

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'">
+    <title>Torrange</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="barra">
+    <div class="marca">torrange</div>
+
+    <nav class="abas">
+        <button class="aba ativa" data-aba="site">Acervo</button>
+        <button class="aba" data-aba="fila">Downloads<span class="contador" id="contador-fila" hidden>0</span></button>
+        <button class="aba" data-aba="biblioteca">Biblioteca</button>
+        <button class="aba" data-aba="config">Ajustes</button>
+    </nav>
+
+    <div class="nav-site" id="nav-site">
+        <button class="icone" id="btn-voltar" title="Voltar">‹</button>
+        <button class="icone" id="btn-avancar" title="Avançar">›</button>
+        <button class="icone" id="btn-recarregar" title="Recarregar">⟳</button>
+        <span class="url" id="url-site">carregando…</span>
+    </div>
+
+    <button class="pilula" id="pilula-player" hidden>▶ Voltar ao player</button>
+</header>
+
+<main id="conteudo">
+
+    <!-- ------------------------------------------------------------ site -->
+    <section class="tela ativa" id="tela-site">
+        <div id="area-site"></div>
+    </section>
+
+    <!-- ------------------------------------------------------------ fila -->
+    <section class="tela" id="tela-fila">
+        <div class="cabecalho-tela">
+            <h1>Downloads</h1>
+            <div class="acoes-cabecalho">
+                <input type="text" id="campo-magnet" placeholder="Colar um link magnet…">
+                <button class="botao" id="btn-magnet">Adicionar</button>
+            </div>
+        </div>
+        <div class="lista" id="lista-fila"></div>
+        <p class="vazio" id="vazio-fila">Nada baixando. Vá até o <b>Acervo</b> e clique em <b>Baixar</b>.</p>
+    </section>
+
+    <!-- ------------------------------------------------------ biblioteca -->
+    <section class="tela" id="tela-biblioteca">
+        <div class="cabecalho-tela">
+            <h1>Biblioteca</h1>
+            <div class="acoes-cabecalho">
+                <input type="search" id="busca-biblioteca" placeholder="Filtrar por nome…">
+            </div>
+        </div>
+        <div class="grade" id="grade-biblioteca"></div>
+        <p class="vazio" id="vazio-biblioteca">Nada por aqui ainda. O que você baixar aparece nesta aba.</p>
+    </section>
+
+    <!-- ---------------------------------------------------------- config -->
+    <section class="tela" id="tela-config">
+        <div class="cabecalho-tela"><h1>Ajustes</h1></div>
+        <div class="painel">
+            <label class="campo">
+                <span>Pasta de downloads</span>
+                <div class="linha">
+                    <input type="text" id="cfg-pasta" readonly>
+                    <button class="botao" id="btn-pasta">Escolher…</button>
+                </div>
+            </label>
+
+            <label class="campo">
+                <span>Endereço do site</span>
+                <input type="text" id="cfg-site">
+            </label>
+
+            <label class="campo-switch">
+                <input type="checkbox" id="cfg-sequencial">
+                <span>Download sequencial <small>permite assistir antes de terminar</small></span>
+            </label>
+
+            <label class="campo-switch">
+                <input type="checkbox" id="cfg-renomear">
+                <span>Mostrar “Baixar” no lugar de “Baixar .torrent”</span>
+            </label>
+
+            <label class="campo-switch">
+                <input type="checkbox" id="cfg-janela-separada">
+                <span>Abrir o vídeo em janela separada
+                    <small>use se a área do vídeo ficar preta — o player continua sendo controlado por aqui</small>
+                </span>
+            </label>
+
+            <div class="linha-dupla">
+                <label class="campo">
+                    <span>Limite de download (KB/s, 0 = sem limite)</span>
+                    <input type="number" id="cfg-limite-down" min="0" step="64">
+                </label>
+                <label class="campo">
+                    <span>Limite de upload (KB/s, 0 = sem limite)</span>
+                    <input type="number" id="cfg-limite-up" min="0" step="64">
+                </label>
+            </div>
+
+            <div class="linha">
+                <button class="botao" id="btn-salvar">Salvar</button>
+                <button class="botao secundario" id="btn-sair-site">Sair da conta do site</button>
+            </div>
+
+            <div class="sobre" id="sobre"></div>
+
+            <div class="diagnostico">
+                <div class="linha">
+                    <button class="botao secundario" id="btn-diagnostico">Diagnóstico do player</button>
+                    <button class="botao secundario" id="btn-copiar-diagnostico" hidden>Copiar</button>
+                </div>
+                <p class="dica">Com um vídeo aberto, isto mostra qual saída de vídeo o mpv
+                   conseguiu criar e o que ele registrou. Se <b>vo</b> vier vazio, é aí que está o problema.</p>
+                <pre id="saida-diagnostico" hidden></pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- ---------------------------------------------------------- player -->
+    <section class="tela" id="tela-player">
+        <div id="area-video">
+            <div class="mensagem-video" id="mensagem-video" hidden></div>
+        </div>
+
+        <div class="controles" id="controles">
+            <div class="linha-tempo">
+                <span class="tempo" id="tempo-atual">0:00</span>
+                <div class="trilha" id="trilha">
+                    <div class="buffer" id="trilha-buffer"></div>
+                    <div class="preenchido" id="trilha-preenchida"></div>
+                    <div class="marcador" id="trilha-marcador"></div>
+                </div>
+                <span class="tempo" id="tempo-total">0:00</span>
+            </div>
+
+            <div class="linha-botoes">
+                <button class="icone grande" id="btn-play" title="Reproduzir/Pausar">▶</button>
+                <button class="icone" id="btn-voltar10" title="-10s">⏪</button>
+                <button class="icone" id="btn-avancar30" title="+30s">⏩</button>
+
+                <div class="volume">
+                    <button class="icone" id="btn-mudo" title="Mudo">🔊</button>
+                    <input type="range" id="volume" min="0" max="130" value="100">
+                </div>
+
+                <div class="titulo-player" id="titulo-player"></div>
+
+                <label class="seletor">
+                    <span>Áudio</span>
+                    <select id="faixa-audio"></select>
+                </label>
+
+                <label class="seletor">
+                    <span>Legenda</span>
+                    <select id="faixa-legenda"></select>
+                </label>
+
+                <button class="icone" id="btn-tela-cheia" title="Tela cheia">⛶</button>
+                <button class="icone" id="btn-fechar-player" title="Fechar">✕</button>
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<div id="avisos"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

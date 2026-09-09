@@ -1,0 +1,8 @@
+# Binarios de terceiros empacotados no app. Formato:
+#   <chave>|<url>|<sha256 ou "-">
+# Atualize com scripts/update-manifest.sh (recalcula os hashes).
+
+qbt_win|https://github.com/gpslab/qbittorrent-nox-win-build/releases/download/qbt-nox-5.2.3_2/qbittorrent-nox-5.2.3-win-x64.zip|f866ac1eab62f5d6f4f9222ccdb038bebecca9b690d72ad41f5fe10d92153646
+qbt_linux|https://github.com/userdocs/qbittorrent-nox-static/releases/download/release-5.2.3_v2.0.14/x86_64-qbittorrent-nox|c1839caf9b7dbddee09e9a4394bb5b17dc70ecd7c3a9b45e84331d5a1389a645
+mpv_win|https://github.com/zhongfly/mpv-winbuild/releases/download/2026-09-09-7e4cb538a3/mpv-x86_64-20260909-git-7e4cb538a3.7z|b84ab4721365118925c052c87b4e9c940444ef266be3ee7999ddcb847c11a7c5
+mpv_linux|https://github.com/pkgforge-dev/mpv-AppImage/releases/download/v0.41.0%402026-09-07_1788787125/mpv-v0.41.0-anylinux-x86_64.AppImage|bb52fb49c54e83155891bfb97578e7ee40575a306d0dddc96fc603be20db8214

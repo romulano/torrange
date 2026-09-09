@@ -1,4 +1,15 @@
-# Artefatos de build — distribuídos via GitHub Releases, não versionados
+# dependencias e saidas de build
+node_modules/
+dist/
+.cache/
+
+# binarios de terceiros baixados pelo scripts/fetch-binaries.sh
+resources/bin/win/*
+resources/bin/linux/*
+!resources/bin/win/.gitkeep
+!resources/bin/linux/.gitkeep
+
+# artefatos de empacotamento (distribuidos via GitHub Releases)
 *.AppImage
 *.exe
 *.exe.blockmap
@@ -10,8 +21,7 @@
 *.msi
 linux-unpacked/
 win-unpacked/
-mac/
-.icon-ico/
-.icon-icns/
 builder-debug.yml
 latest*.yml
+
+*.log

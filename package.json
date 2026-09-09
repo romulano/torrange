@@ -1,0 +1,28 @@
+{
+  "name": "torrange",
+  "productName": "Torrange",
+  "version": "1.0.1",
+  "description": "Cliente desktop do Torrange com qBittorrent e player mpv integrados",
+  "author": "Torrange <contato@torrange.com>",
+  "license": "MIT",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "node scripts/start.js",
+    "binaries": "bash scripts/fetch-binaries.sh",
+    "dist": "electron-builder --linux --win --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "teste": "node testes/e2e.js",
+    "teste:player": "node testes/player.js",
+    "teste:pacote": "node testes/pacote.js"
+  },
+  "devDependencies": {
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3"
+  },
+  "homepage": "https://torrange.com",
+  "repository": {
+    "type": "git",
+    "url": "https://torrange.com"
+  }
+}
