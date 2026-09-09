@@ -1,0 +1,17 @@
+# Artefatos de build — distribuídos via GitHub Releases, não versionados
+*.AppImage
+*.exe
+*.exe.blockmap
+*.deb
+*.zip
+*.rpm
+*.snap
+*.dmg
+*.msi
+linux-unpacked/
+win-unpacked/
+mac/
+.icon-ico/
+.icon-icns/
+builder-debug.yml
+latest*.yml
