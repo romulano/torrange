@@ -10,12 +10,17 @@ const fs = require('fs');
 const path = require('path');
 
 const config = require('./config');
+const diagnostico = require('./diagnostico');
 const paths = require('./paths');
 const library = require('./library');
 const metadados = require('./metadados');
 const player = require('./player');
 const qbit = require('./qbit');
 const site = require('./site');
+
+// Comeca a registrar antes de tudo: o que interessa no diagnostico e
+// justamente a subida do app, que acontece bem antes de alguem pedir o log.
+diagnostico.capturarConsole();
 
 /**
  * Acoplar o video a janela (--wid do mpv) so funciona no X11: sob Wayland o
@@ -73,6 +78,11 @@ let retangulos = { site: null, player: null };
 const progressoAnterior = new Map();
 let encerrando = false;
 let qbitPronto = false;
+// Enquanto o qBittorrent nao sobe, o que o usuario pediu fica guardado aqui e
+// entra na fila assim que ele responde -- perder o torrent capturado seria o
+// mesmo que o clique nao ter funcionado.
+const pendentes = [];
+let estadoQbit = { fase: 'iniciando', motivo: '', tentativa: 0 };
 
 // --------------------------------------------------------------------------
 // Utilidades
@@ -83,6 +93,11 @@ function enviar(canal, dados) {
 
 function avisar(texto, tipo = 'info') {
     enviar('aviso', { texto, tipo });
+}
+
+function publicarEstadoQbit(fase, motivo = '') {
+    estadoQbit = { fase, motivo, tentativa: estadoQbit.tentativa, pendentes: pendentes.length };
+    enviar('qbit:estado', estadoQbit);
 }
 
 function notificar(titulo, corpo) {
@@ -171,9 +186,34 @@ function aplicarLayout() {
 // --------------------------------------------------------------------------
 // Entrada de torrents
 
+/** Guarda o pedido para quando o qBittorrent responder. */
+function enfileirar(pedido, titulo) {
+    pendentes.push(pedido);
+    publicarEstadoQbit(estadoQbit.fase, estadoQbit.motivo);
+    if (estadoQbit.fase === 'erro') {
+        avisar(
+            `O qBittorrent não subiu, então "${titulo}" está esperando. Veja o motivo na aba Downloads.`,
+            'erro'
+        );
+        return;
+    }
+    avisar(`O qBittorrent ainda está subindo. "${titulo}" entra na fila assim que ele responder.`, 'info');
+}
+
+/** Manda para a fila tudo o que ficou esperando o qBittorrent. */
+async function despejarPendentes() {
+    if (!qbitPronto || !pendentes.length) return;
+    const lista = pendentes.splice(0, pendentes.length);
+    publicarEstadoQbit(estadoQbit.fase, estadoQbit.motivo);
+    for (const pedido of lista) {
+        if (pedido.magnet) await receberMagnet(pedido.magnet);
+        else await receberTorrent(pedido);
+    }
+}
+
 async function receberTorrent({ dados, nome }) {
     if (!qbitPronto) {
-        avisar('O qBittorrent ainda esta iniciando, tente de novo em instantes.', 'erro');
+        enfileirar({ dados, nome }, (nome || 'torrent').replace(/\.torrent$/i, ''));
         return;
     }
     try {
@@ -189,7 +229,7 @@ async function receberTorrent({ dados, nome }) {
 
 async function receberMagnet(magnet) {
     if (!qbitPronto) {
-        avisar('O qBittorrent ainda esta iniciando, tente de novo em instantes.', 'erro');
+        enfileirar({ magnet }, 'o link magnet');
         return;
     }
     try {
@@ -212,10 +252,6 @@ async function receberUrl(endereco) {
     if (texto.startsWith('magnet:')) return receberMagnet(texto);
     if (!/^https?:\/\//i.test(texto)) {
         avisar('Cole um link magnet ou um endereço que comece com http:// ou https://', 'erro');
-        return;
-    }
-    if (!qbitPronto) {
-        avisar('O qBittorrent ainda esta iniciando, tente de novo em instantes.', 'erro');
         return;
     }
     try {
@@ -331,6 +367,62 @@ function registrarIpc() {
     ipcMain.handle('fila:magnet', (_e, magnet) => receberMagnet(magnet));
     ipcMain.handle('fila:url', (_e, endereco) => receberUrl(endereco));
     ipcMain.handle('fila:arquivo', () => escolherTorrents());
+
+    ipcMain.handle('qbit:estado', () => estadoQbit);
+    ipcMain.handle('qbit:tentar', async () => {
+        await subirQbit();
+        return estadoQbit;
+    });
+    // ---------------------------------------------- modo diagnostico (.log)
+    ipcMain.on('app:log', (_e, dados) => {
+        diagnostico.anotar((dados && dados.origem) || 'interface', dados && dados.texto);
+    });
+
+    ipcMain.handle('app:diagnostico', async (_e, opcoes = {}) => {
+        try {
+            const nome = diagnostico.nomeSugerido();
+            let destino = path.join(app.getPath('userData'), 'diagnosticos', nome);
+
+            if (opcoes.escolher !== false) {
+                let padrao;
+                try {
+                    padrao = path.join(app.getPath('desktop'), nome);
+                } catch {
+                    padrao = destino;
+                }
+                const r = await dialog.showSaveDialog(janela, {
+                    title: 'Salvar o diagnóstico',
+                    defaultPath: padrao,
+                    filters: [{ name: 'Registro', extensions: ['log'] }],
+                });
+                if (r.canceled || !r.filePath) return { cancelado: true };
+                destino = r.filePath;
+            }
+
+            const fontes = await reunirDiagnostico();
+            const r = await diagnostico.salvar(destino, fontes);
+            avisar(`Diagnóstico salvo em ${r.caminho}`, 'ok');
+            return r;
+        } catch (erro) {
+            console.error('diagnostico:', erro);
+            return { erro: erro.message };
+        }
+    });
+
+    ipcMain.handle('app:abrir-arquivo', async (_e, caminho) => {
+        if (!caminho) return false;
+        const erro = await shell.openPath(caminho);
+        if (erro) shell.showItemInFolder(caminho);
+        return true;
+    });
+
+    ipcMain.handle('qbit:registro', () => ({
+        estado: estadoQbit,
+        binario: paths.binarioQbit(),
+        porta: qbit.porta || null,
+        ultimoErro: qbit.ultimoErro(),
+        linhas: qbit.registro(),
+    }));
 
     ipcMain.handle('biblioteca:listar', () => metadados.aplicar(library.listar()));
 
@@ -467,16 +559,74 @@ function registrarIpc() {
 // --------------------------------------------------------------------------
 // Ciclo de vida
 
+/** Junta o que o modulo de diagnostico precisa das outras pecas do app. */
+async function reunirDiagnostico() {
+    let dadosPlayer = null;
+    try {
+        dadosPlayer = await player.diagnostico();
+    } catch (erro) {
+        dadosPlayer = { erro: erro.message };
+    }
+
+    return {
+        config: config.ler(),
+        estadoQbit,
+        qbit: {
+            ativo: qbit.ativo,
+            porta: qbit.porta,
+            ultimoErro: qbit.ultimoErro(),
+            registro: qbit.registro(),
+        },
+        player: dadosPlayer,
+        fila: library.snapshot(),
+        biblioteca: library.listar(),
+        caminhos: {
+            binarioQbit: paths.binarioQbit(),
+            binarioMpv: paths.binarioMpv(),
+            perfilQbit: path.join(app.getPath('userData'), 'qbittorrent'),
+        },
+        janela:
+            janela && !janela.isDestroyed()
+                ? {
+                      limites: janela.getContentBounds(),
+                      telaCheia: janela.isFullScreen(),
+                      abaAtual,
+                      retangulos,
+                  }
+                : null,
+        video: { podeEmbutir: podeEmbutirVideo },
+    };
+}
+
+let subindoQbit = false;
+
 async function subirQbit() {
+    if (subindoQbit || qbitPronto) return;
+    subindoQbit = true;
+    estadoQbit.tentativa++;
+    publicarEstadoQbit('iniciando');
     try {
         await qbit.iniciar(config.ler(), (linha) => console.log('[qbit]', linha));
         qbitPronto = true;
-        enviar('aviso', { texto: 'qBittorrent pronto.', tipo: 'ok' });
+        publicarEstadoQbit('pronto');
+        avisar('qBittorrent pronto.', 'ok');
         iniciarMonitor();
         await atualizar();
+        await despejarPendentes();
     } catch (erro) {
         console.error(erro);
-        avisar(`Nao consegui iniciar o qBittorrent: ${erro.message}`, 'erro');
+        publicarEstadoQbit('erro', erro.message);
+        avisar(`Não consegui iniciar o qBittorrent: ${erro.message}`, 'erro');
+        // Falha transitoria (porta tomada no intervalo entre escolher e usar,
+        // executavel ainda preso no antivirus) costuma passar na segunda.
+        if (estadoQbit.tentativa < 3 && !encerrando) {
+            setTimeout(() => {
+                subindoQbit = false;
+                subirQbit();
+            }, 5000);
+        }
+    } finally {
+        subindoQbit = false;
     }
 }
 

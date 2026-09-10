@@ -161,6 +161,39 @@ button, input, select { font: inherit; color: inherit; }
 /* a caixa da aba Downloads recebe magnet e endereco web: precisa de espaco */
 #campo-magnet { min-width: 300px; flex: 1 1 300px; }
 
+/* faixa de estado do qBittorrent: fica na tela ate o problema passar */
+.estado-qbit {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--fundo-2);
+    border: 1px solid var(--borda);
+    border-left: 3px solid var(--destaque);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+}
+
+.estado-qbit.erro { border-left-color: var(--erro); }
+.estado-qbit .estado-qbit-texto { display: flex; flex-direction: column; gap: 4px; }
+.estado-qbit strong { font-weight: 650; }
+.estado-qbit span { color: var(--texto-2); font-size: 13px; }
+
+#qbit-registro {
+    max-height: 260px;
+    overflow: auto;
+    margin: 0;
+    padding: 10px 12px;
+    background: var(--fundo);
+    border: 1px solid var(--borda);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+}
+
 input[type="text"], input[type="search"], input[type="number"], select {
     background: var(--fundo-2);
     border: 1px solid var(--borda);
@@ -449,6 +482,8 @@ input:focus, select:focus { border-color: var(--destaque); }
     max-width: 420px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     animation: entrar 0.2s ease;
+    transition: opacity 0.3s ease;
+    cursor: pointer; /* clicar tira da frente */
 }
 
 .aviso.ok { border-left-color: var(--ok); }

@@ -20,6 +20,12 @@ const USUARIO = 'torrange';
 let processo = null;
 let porta = 0;
 let senha = '';
+// Ultimas linhas do qbittorrent-nox e o motivo da ultima falha. Quando ele nao
+// sobe, isto e a unica pista que o usuario tem -- por isso fica guardado e vai
+// para a tela, em vez de sumir num aviso de 4 segundos.
+const registro = [];
+const MAX_REGISTRO = 200;
+let ultimoErro = '';
 // O qBittorrent 5.x nomeia o cookie de sessao como QBT_SID_<porta> (antes era
 // so SID), entao guardamos o par "nome=valor" inteiro em vez de so o valor.
 let cookieSessao = '';
@@ -269,7 +275,18 @@ function esperar(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
 
-async function aguardarWebUI(tentativas = 120) {
+function ultimasLinhas(quantas) {
+    return registro.slice(-quantas).join(' | ');
+}
+
+function anotar(linha) {
+    const texto = String(linha || '').trim();
+    if (!texto) return;
+    registro.push(`${new Date().toISOString().slice(11, 19)} ${texto}`);
+    if (registro.length > MAX_REGISTRO) registro.splice(0, registro.length - MAX_REGISTRO);
+}
+
+async function aguardarWebUI(tentativas = 360) {
     for (let i = 0; i < tentativas; i++) {
         try {
             const r = await requisicao('/api/v2/app/version');
@@ -288,7 +305,18 @@ async function aguardarWebUI(tentativas = 120) {
 // --------------------------------------------------------------------------
 // Ciclo de vida
 
+/** Qualquer falha na subida vira motivo guardado, para a tela poder mostrar. */
 async function iniciar(config, aoLog = () => {}) {
+    try {
+        return await subir(config, aoLog);
+    } catch (erro) {
+        ultimoErro = erro.message;
+        anotar(`falha ao iniciar: ${erro.message}`);
+        throw erro;
+    }
+}
+
+async function subir(config, aoLog) {
     const executavel = binarioQbit();
     if (!fs.existsSync(executavel)) {
         throw new Error(
@@ -317,14 +345,37 @@ async function iniciar(config, aoLog = () => {}) {
         { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }
     );
 
-    processo.stdout.on('data', (d) => aoLog(String(d).trim()));
-    processo.stderr.on('data', (d) => aoLog(String(d).trim()));
-    processo.on('exit', (codigo) => {
-        if (!encerrando) aoLog(`qbittorrent-nox saiu inesperadamente (codigo ${codigo})`);
+    const registrar = (texto) => {
+        anotar(texto);
+        aoLog(texto);
+    };
+
+    processo.stdout.on('data', (d) => registrar(String(d)));
+    processo.stderr.on('data', (d) => registrar(String(d)));
+
+    // Sem este ouvinte um spawn que falha (executavel bloqueado pelo antivirus,
+    // DLL faltando, permissao negada) derruba o processo principal inteiro.
+    let falhaDoSpawn = null;
+    processo.on('error', (erro) => {
+        falhaDoSpawn = erro;
+        registrar(`nao consegui executar ${executavel}: ${erro.message}`);
+    });
+
+    processo.on('exit', (codigo, sinal) => {
+        if (!encerrando) {
+            registrar(`qbittorrent-nox saiu inesperadamente (codigo ${codigo}, sinal ${sinal})`);
+        }
         processo = null;
     });
 
-    await aguardarWebUI();
+    try {
+        await aguardarWebUI();
+    } catch (erro) {
+        // a causa real costuma estar no que o proprio qbittorrent-nox imprimiu
+        const causa = falhaDoSpawn ? falhaDoSpawn.message : ultimasLinhas(3);
+        ultimoErro = causa ? `${erro.message} -- ${causa}` : erro.message;
+        throw new Error(ultimoErro);
+    }
     await login();
 
     // categoria propria para nao misturar com torrents que o usuario ja tenha
@@ -338,7 +389,8 @@ async function iniciar(config, aoLog = () => {}) {
     }
 
     await aplicarPreferencias(config);
-    aoLog(`qBittorrent no ar em 127.0.0.1:${porta}`);
+    ultimoErro = '';
+    registrar(`qBittorrent no ar em 127.0.0.1:${porta}`);
     return { porta };
 }
 
@@ -468,6 +520,8 @@ module.exports = {
     remover,
     sequencial,
     aplicarPreferencias,
+    registro: () => registro.slice(),
+    ultimoErro: () => ultimoErro,
     CATEGORIA,
     get porta() {
         return porta;

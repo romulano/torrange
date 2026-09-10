@@ -17,10 +17,10 @@ Os instaladores estão publicados em
 
 | Sistema | Arquivo |
 | --- | --- |
-| Windows (instalador) | `Torrange-Setup-1.0.3.exe` |
-| Windows (portátil) | `Torrange-1.0.3-win.zip` |
-| Linux (Debian/Ubuntu) | `torrange_1.0.3_amd64.deb` |
-| Linux (universal) | `Torrange-1.0.3.AppImage` |
+| Windows (instalador) | `Torrange-Setup-1.0.4.exe` |
+| Windows (portátil) | `Torrange-1.0.4-win.zip` |
+| Linux (Debian/Ubuntu) | `torrange_1.0.4_amd64.deb` |
+| Linux (universal) | `Torrange-1.0.4.AppImage` |
 
 Os pacotes são autocontidos: trazem o Electron, o qBittorrent e o mpv dentro.
 Não é preciso instalar Node, npm nem o qBittorrent à parte.
@@ -44,7 +44,7 @@ Nada precisa ser instalado à parte.
 **Linux — Debian/Ubuntu**
 
 ```bash
-sudo apt install ./dist/torrange_1.0.3_amd64.deb
+sudo apt install ./dist/torrange_1.0.4_amd64.deb
 torrange                     # ou pelo menu de aplicativos: "Torrange"
 ```
 
@@ -54,14 +54,14 @@ Para remover: `sudo apt remove torrange`.
 **Linux — qualquer distro (AppImage)**
 
 ```bash
-chmod +x dist/Torrange-1.0.3.AppImage
-./dist/Torrange-1.0.3.AppImage
+chmod +x dist/Torrange-1.0.4.AppImage
+./dist/Torrange-1.0.4.AppImage
 ```
 
 **Windows**
 
-Execute `Torrange-Setup-1.0.3.exe` (instalador, cria atalhos) ou descompacte
-`Torrange-1.0.3-win.zip` e rode `Torrange.exe` (portátil, não instala nada).
+Execute `Torrange-Setup-1.0.4.exe` (instalador, cria atalhos) ou descompacte
+`Torrange-1.0.4-win.zip` e rode `Torrange.exe` (portátil, não instala nada).
 
 **Primeiro uso**
 
@@ -89,10 +89,10 @@ Os instaladores saem em `dist/`:
 
 | Arquivo | Plataforma | Tamanho |
 |---|---|---|
-| `Torrange-Setup-1.0.3.exe` | Windows — instalador | 154 MB |
-| `Torrange-1.0.3-win.zip` | Windows — portátil | 207 MB |
-| `Torrange-1.0.3.AppImage` | Linux — universal | 185 MB |
-| `torrange_1.0.3_amd64.deb` | Linux — Debian/Ubuntu | 147 MB |
+| `Torrange-Setup-1.0.4.exe` | Windows — instalador | 154 MB |
+| `Torrange-1.0.4-win.zip` | Windows — portátil | 207 MB |
+| `Torrange-1.0.4.AppImage` | Linux — universal | 185 MB |
+| `torrange_1.0.4_amd64.deb` | Linux — Debian/Ubuntu | 147 MB |
 
 Para gerar só uma plataforma:
 
@@ -126,6 +126,7 @@ HTML do botão do torrange e serve um `.torrent` válido.
 
 ```bash
 npm run teste                                     # site, rótulo "Baixar", entradas da aba Downloads e qBittorrent
+npm run teste:qbit                                # espera pelo qBittorrent, falha visível e o .log de diagnóstico
 npm run teste:player -- /caminho/video.mkv        # player: faixas, busca, pausa
 npm run teste:biblioteca -- /caminho/video.mkv    # pastas, capas e edição
 npm run teste:pacote                              # confere os instaladores gerados
@@ -188,6 +189,37 @@ A aba **Downloads** aceita, além do que vem do Acervo:
   quem está logado enxerga;
 - **arquivo `.torrent` do disco**, pelo botão *Arquivo .torrent…* (aceita vários
   de uma vez).
+
+### Quando o qBittorrent ainda não subiu
+
+O qBittorrent leva alguns segundos para responder — na primeira execução no
+Windows, com o antivírus varrendo o executável, pode levar bem mais. Clicar em
+**Baixar** nesse intervalo **não perde o torrent**: ele fica guardado e entra na
+fila sozinho assim que o qBittorrent responde, sem precisar clicar de novo.
+
+A aba **Downloads** mostra em que pé está — e, se ele não subir, mostra o
+motivo na própria tela (não num aviso que some), com **Tentar de novo**, **Ver
+detalhes** (o que o processo escreveu) e **Gerar .log**. O app ainda tenta
+sozinho até três vezes antes de desistir, porque parte das falhas é passageira:
+porta tomada no intervalo entre escolher e usar, executável ainda preso no
+antivírus.
+
+### Modo diagnóstico
+
+**Ajustes → Gerar arquivo de diagnóstico (.log)** grava um arquivo único com
+tudo o que costuma explicar um problema relatado:
+
+- versões (app, Electron, Chrome, Node), sistema e tipo de sessão gráfica;
+- caminhos usados e se os binários embutidos existem, com tamanho e permissão;
+- configuração e espaço livre na pasta de downloads;
+- estado do qBittorrent, o que o processo escreveu, o `qBittorrent.conf`
+  (**sem a senha**) e o log que o próprio qBittorrent grava;
+- diagnóstico do mpv, a fila e a biblioteca;
+- tudo o que o app registrou **desde que abriu** — inclusive erros da interface.
+
+O registro começa a ser gravado na subida do app, não na hora em que se pede o
+arquivo, senão a parte mais importante já teria passado. É o arquivo para
+anexar ao relatar um problema.
 
 ### qBittorrent embutido
 
@@ -289,6 +321,7 @@ src/main/
     player.js                 mpv acoplado + IPC
     library.js                catálogo e posições de reprodução
     metadados.js              pastas, capas, nomes, descrições e etiquetas
+    diagnostico.js            registro do app e geração do .log de diagnóstico
     config.js, paths.js       ajustes e caminhos
 src/preload/
     site-inject.js            roda dentro do site (rótulo do botão)
@@ -296,6 +329,8 @@ src/preload/
 src/renderer/                 interface (abas, fila, biblioteca, player)
 testes/
     e2e.js                    site, rótulo do botão e envio ao qBittorrent
+    espera-qbit.js            espera pelo qBittorrent, falha visível e diagnóstico
+    interface.js              navegação entre abas e sobreposições
     player.js                 biblioteca e player com um MKV real
     biblioteca.js             pastas, capas e edição
     pacote.js                 verifica os instaladores gerados

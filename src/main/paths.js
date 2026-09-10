@@ -13,8 +13,13 @@ function raizBinarios() {
         : path.join(process.resourcesPath, 'bin');
 }
 
-/** Caminho do executavel do qbittorrent-nox. */
+/**
+ * Caminho do executavel do qbittorrent-nox.
+ * TORRANGE_QBIT troca o binario embutido por outro -- serve para os testes
+ * exercitarem o que acontece quando ele demora ou nao sobe.
+ */
 function binarioQbit() {
+    if (process.env.TORRANGE_QBIT) return process.env.TORRANGE_QBIT;
     const nome = process.platform === 'win32' ? 'qbittorrent-nox.exe' : 'qbittorrent-nox';
     return path.join(raizBinarios(), 'qbittorrent', nome);
 }

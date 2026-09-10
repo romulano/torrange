@@ -6,6 +6,7 @@ const eventos = [
     'fila:atualizou',
     'biblioteca:atualizou',
     'player:evento',
+    'qbit:estado',
     'aviso',
 ];
 
@@ -27,6 +28,11 @@ contextBridge.exposeInMainWorld('torrange', {
         adicionarMagnet: (magnet) => ipcRenderer.invoke('fila:magnet', magnet),
         adicionarUrl: (endereco) => ipcRenderer.invoke('fila:url', endereco),
         escolherArquivo: () => ipcRenderer.invoke('fila:arquivo'),
+    },
+    qbit: {
+        estado: () => ipcRenderer.invoke('qbit:estado'),
+        tentarDeNovo: () => ipcRenderer.invoke('qbit:tentar'),
+        registro: () => ipcRenderer.invoke('qbit:registro'),
     },
     biblioteca: {
         listar: () => ipcRenderer.invoke('biblioteca:listar'),
@@ -58,6 +64,11 @@ contextBridge.exposeInMainWorld('torrange', {
         escolherPasta: () => ipcRenderer.invoke('config:escolher-pasta'),
     },
     info: () => ipcRenderer.invoke('app:info'),
+    diagnostico: {
+        gerar: (opcoes) => ipcRenderer.invoke('app:diagnostico', opcoes || {}),
+        abrirArquivo: (caminho) => ipcRenderer.invoke('app:abrir-arquivo', caminho),
+        anotar: (origem, texto) => ipcRenderer.send('app:log', { origem, texto }),
+    },
     ao: (canal, callback) => {
         if (!eventos.includes(canal)) throw new Error(`canal desconhecido: ${canal}`);
         const ouvinte = (_e, dados) => callback(dados);

@@ -46,6 +46,19 @@
                 <button class="botao secundario" id="btn-arquivo-torrent">Arquivo .torrent…</button>
             </div>
         </div>
+        <div class="estado-qbit" id="estado-qbit" hidden>
+            <div class="estado-qbit-texto">
+                <strong id="estado-qbit-titulo"></strong>
+                <span id="estado-qbit-detalhe"></span>
+            </div>
+            <div class="linha">
+                <button class="botao secundario" id="btn-qbit-tentar">Tentar de novo</button>
+                <button class="botao secundario" id="btn-qbit-detalhes">Ver detalhes</button>
+                <button class="botao secundario" id="btn-qbit-diagnostico">Gerar .log</button>
+            </div>
+            <pre id="qbit-registro" hidden></pre>
+        </div>
+
         <div class="lista" id="lista-fila"></div>
         <p class="vazio" id="vazio-fila">Nada baixando. Vá até o <b>Acervo</b> e clique em <b>Baixar</b> — ou cole um link magnet, o endereço de um torrent, ou escolha um arquivo <b>.torrent</b> aqui em cima.</p>
     </section>
@@ -117,6 +130,15 @@
             <div class="sobre" id="sobre"></div>
 
             <div class="diagnostico">
+                <div class="linha">
+                    <button class="botao" id="btn-diagnostico-arquivo">Gerar arquivo de diagnóstico (.log)</button>
+                    <button class="botao secundario" id="btn-abrir-diagnostico" hidden>Abrir o arquivo</button>
+                </div>
+                <p class="dica">Junta num arquivo só as versões, os caminhos, o estado do
+                   qBittorrent e do player, a fila e tudo o que o app registrou desde que abriu.
+                   É o arquivo para anexar quando for relatar um problema.</p>
+                <p class="dica" id="caminho-diagnostico" hidden></p>
+
                 <div class="linha">
                     <button class="botao secundario" id="btn-diagnostico">Diagnóstico do player</button>
                     <button class="botao secundario" id="btn-copiar-diagnostico" hidden>Copiar</button>

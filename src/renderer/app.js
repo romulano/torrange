@@ -129,6 +129,60 @@ function enviarLayout() {
     api.ui.layout({ site: retangulo('#area-site'), player: retangulo('#area-video') });
 }
 
+// ------------------------------------------------------------- estado do qbit
+
+let estadoQbit = { fase: 'iniciando', motivo: '', pendentes: 0 };
+
+function renderEstadoQbit() {
+    const faixa = $('#estado-qbit');
+    const { fase, motivo, pendentes } = estadoQbit;
+
+    if (fase === 'pronto') {
+        faixa.hidden = true;
+        return;
+    }
+
+    faixa.hidden = false;
+    faixa.classList.toggle('erro', fase === 'erro');
+    $('#btn-qbit-tentar').hidden = fase !== 'erro';
+
+    const itens = pendentes === 1 ? '1 download está esperando' : `${pendentes} downloads estão esperando`;
+
+    if (fase === 'erro') {
+        $('#estado-qbit-titulo').textContent = 'O qBittorrent não subiu.';
+        $('#estado-qbit-detalhe').textContent = pendentes
+            ? `${motivo} — ${itens} e entra na fila assim que ele subir. Nada foi perdido.`
+            : motivo;
+    } else {
+        $('#estado-qbit-titulo').textContent = 'Iniciando o qBittorrent…';
+        $('#estado-qbit-detalhe').textContent = pendentes
+            ? `${itens} e entra na fila sozinho quando ele responder — não precisa clicar de novo.`
+            : 'Na primeira execução isso pode levar alguns segundos.';
+    }
+}
+
+async function mostrarRegistroQbit() {
+    const saida = $('#qbit-registro');
+    if (!saida.hidden) {
+        saida.hidden = true;
+        return;
+    }
+    saida.hidden = false;
+    saida.textContent = 'coletando…';
+    try {
+        const d = await api.qbit.registro();
+        saida.textContent = [
+            `binário: ${d.binario}`,
+            `porta: ${d.porta || '—'}`,
+            `último erro: ${d.ultimoErro || '—'}`,
+            '',
+            ...(d.linhas.length ? d.linhas : ['(o qbittorrent-nox não escreveu nada)']),
+        ].join('\n');
+    } catch (erro) {
+        saida.textContent = `falha ao coletar: ${erro.message || erro}`;
+    }
+}
+
 // -------------------------------------------------------------------- fila
 
 function renderFila(forcar) {
@@ -873,10 +927,15 @@ function salvarPosicao() {
 function aviso(texto, tipo = 'info') {
     const el = elemento('div', `aviso ${tipo}`, texto);
     $('#avisos').append(el);
-    setTimeout(() => {
+
+    const sumir = () => {
         el.style.opacity = '0';
         setTimeout(() => el.remove(), 300);
-    }, 4200);
+    };
+    el.addEventListener('click', sumir); // dá para tirar da frente antes da hora
+
+    // Erro é justamente o que o usuário precisa ler: 4 segundos não bastam.
+    setTimeout(sumir, tipo === 'erro' ? 14000 : 4200);
 }
 
 // ------------------------------------------------------------------ config
@@ -961,6 +1020,31 @@ function formatarDiagnostico(d) {
     return linhas.join('\n');
 }
 
+let ultimoDiagnostico = null;
+
+async function gerarArquivoDiagnostico() {
+    const botao = $('#btn-diagnostico-arquivo');
+    const rotulo = botao.textContent;
+    botao.disabled = true;
+    botao.textContent = 'Coletando…';
+    try {
+        const r = await api.diagnostico.gerar();
+        if (r.cancelado) return;
+        if (r.erro) {
+            aviso(`Não consegui gerar o diagnóstico: ${r.erro}`, 'erro');
+            return;
+        }
+        ultimoDiagnostico = r.caminho;
+        const campo = $('#caminho-diagnostico');
+        campo.hidden = false;
+        campo.textContent = `Salvo em ${r.caminho} (${tamanho(r.bytes)}).`;
+        $('#btn-abrir-diagnostico').hidden = false;
+    } finally {
+        botao.disabled = false;
+        botao.textContent = rotulo;
+    }
+}
+
 async function coletarDiagnostico() {
     const saida = $('#saida-diagnostico');
     saida.hidden = false;
@@ -990,6 +1074,22 @@ function ligarEventos() {
         if (e.key === 'Enter') adicionarDaCaixa();
     });
     $('#btn-arquivo-torrent').addEventListener('click', escolherArquivoTorrent);
+    $('#btn-qbit-detalhes').addEventListener('click', mostrarRegistroQbit);
+    $('#btn-qbit-diagnostico').addEventListener('click', async () => {
+        await gerarArquivoDiagnostico();
+        if (ultimoDiagnostico) aviso('Diagnóstico salvo. Anexe esse arquivo ao relatar o problema.', 'ok');
+    });
+    $('#btn-qbit-tentar').addEventListener('click', async () => {
+        const botao = $('#btn-qbit-tentar');
+        botao.disabled = true;
+        $('#estado-qbit-titulo').textContent = 'Tentando de novo…';
+        try {
+            estadoQbit = await api.qbit.tentarDeNovo();
+            renderEstadoQbit();
+        } finally {
+            botao.disabled = false;
+        }
+    });
 
     // biblioteca
     $('#busca-biblioteca').addEventListener('input', (e) => {
@@ -1028,6 +1128,10 @@ function ligarEventos() {
         }
     });
     $('#btn-salvar').addEventListener('click', salvarConfig);
+    $('#btn-diagnostico-arquivo').addEventListener('click', gerarArquivoDiagnostico);
+    $('#btn-abrir-diagnostico').addEventListener('click', () => {
+        if (ultimoDiagnostico) api.diagnostico.abrirArquivo(ultimoDiagnostico);
+    });
     $('#btn-diagnostico').addEventListener('click', coletarDiagnostico);
     $('#btn-copiar-diagnostico').addEventListener('click', async () => {
         await navigator.clipboard.writeText($('#saida-diagnostico').textContent);
@@ -1153,6 +1257,10 @@ function ligarEventos() {
         if (abaAtual === 'fila') renderFila();
     });
     api.ao('player:evento', tratarEventoPlayer);
+    api.ao('qbit:estado', (d) => {
+        estadoQbit = d || estadoQbit;
+        renderEstadoQbit();
+    });
     api.ao('aviso', (d) => aviso(d.texto, d.tipo));
 
     setInterval(salvarPosicao, 5000);
@@ -1161,6 +1269,16 @@ function ligarEventos() {
 
 // ------------------------------------------------------------------ inicio
 
+// Erro na interface tambem entra no arquivo de diagnostico -- sem isto, o que
+// quebra a tela nao aparece em lugar nenhum do log.
+window.addEventListener('error', (e) => {
+    api.diagnostico.anotar('interface', `${e.message} (${e.filename}:${e.lineno})`);
+});
+window.addEventListener('unhandledrejection', (e) => {
+    const motivo = e.reason;
+    api.diagnostico.anotar('interface', `promessa rejeitada: ${(motivo && motivo.stack) || motivo}`);
+});
+
 (async function iniciar() {
     ligarEventos();
     await carregarConfig();
@@ -1168,6 +1286,9 @@ function ligarEventos() {
     fila = (await api.fila.listar()) || [];
     biblioteca = (await api.biblioteca.listar()) || [];
     await carregarPastas();
+    // o qBittorrent pode ter subido (ou falhado) antes desta tela existir
+    estadoQbit = (await api.qbit.estado()) || estadoQbit;
+    renderEstadoQbit();
     renderFila(true);
     renderBiblioteca(true);
 })();
