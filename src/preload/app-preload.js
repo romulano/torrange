@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('torrange', {
         retomar: (hash) => ipcRenderer.invoke('fila:retomar', hash),
         remover: (hash, apagar) => ipcRenderer.invoke('fila:remover', hash, apagar),
         adicionarMagnet: (magnet) => ipcRenderer.invoke('fila:magnet', magnet),
+        adicionarUrl: (endereco) => ipcRenderer.invoke('fila:url', endereco),
+        escolherArquivo: () => ipcRenderer.invoke('fila:arquivo'),
     },
     biblioteca: {
         listar: () => ipcRenderer.invoke('biblioteca:listar'),

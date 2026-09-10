@@ -162,6 +162,69 @@ function checar(descricao, condicao, detalhe) {
             : [];
         checar('o arquivo .torrent nao foi parar na pasta Downloads', sujeira.length === 0, sujeira.join(', '));
 
+        // ------------------------------ entrada por endereco na aba Downloads
+        // (link direto do .torrent e endereco da pagina do item)
+        const esperarFila = async (quantos) => {
+            let atual = [];
+            for (let i = 0; i < 40; i++) {
+                await espera(500);
+                atual = await interface_.avaliar('window.torrange.fila.listar()');
+                if (atual.length >= quantos) break;
+            }
+            return atual;
+        };
+
+        await interface_.avaliar(
+            `window.torrange.fila.adicionarUrl(${JSON.stringify(`http://127.0.0.1:${PORTA_SITE}/baixar/4624732`)})`
+        );
+        fila = await esperarFila(2);
+        checar(
+            'colar o endereco do .torrent adiciona o download',
+            fila.some((t) => /4624732/.test(t.name)),
+            `na fila: ${fila.map((t) => t.name).join(', ')}`
+        );
+
+        await interface_.avaliar(
+            `window.torrange.fila.adicionarUrl(${JSON.stringify(`http://127.0.0.1:${PORTA_SITE}/item/4711000`)})`
+        );
+        fila = await esperarFila(3);
+        checar(
+            'colar o endereco da pagina do item acha o .torrent dentro dela',
+            fila.some((t) => /4711000/.test(t.name)),
+            `na fila: ${fila.map((t) => t.name).join(', ')}`
+        );
+
+        await interface_.avaliar(
+            `window.torrange.fila.adicionarUrl(${JSON.stringify(`http://127.0.0.1:${PORTA_SITE}/cdn/4822000`)})`
+        );
+        fila = await esperarFila(4);
+        checar(
+            'endereco que redireciona (caso da CDN) tambem entra na fila',
+            fila.some((t) => /4822000/.test(t.name)),
+            `na fila: ${fila.map((t) => t.name).join(', ')}`
+        );
+
+        // botao que abre em aba nova: nao pode escapar para o navegador do sistema
+        await siteView.avaliar(`document.querySelectorAll('a.botao-baixar')[2].click(); true`);
+        fila = await esperarFila(5);
+        checar(
+            'botao que abre em aba nova tambem cai na fila do app',
+            fila.some((t) => /4933000/.test(t.name)),
+            `na fila: ${fila.map((t) => t.name).join(', ')}`
+        );
+
+        const botoesDaFila = await interface_.avaliar(`
+            ({
+                arquivo: !!document.querySelector('#btn-arquivo-torrent'),
+                api: typeof window.torrange.fila.escolherArquivo === 'function',
+            })
+        `);
+        checar(
+            'a aba Downloads oferece escolher um arquivo .torrent',
+            botoesDaFila.arquivo && botoesDaFila.api,
+            JSON.stringify(botoesDaFila)
+        );
+
         // ------------------------------------------------------- limpeza
         for (const t of fila) {
             await interface_.avaliar(`window.torrange.fila.remover(${JSON.stringify(t.hash)}, true)`);

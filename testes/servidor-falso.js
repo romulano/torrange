@@ -80,12 +80,48 @@ const PAGINA = (porta) => `<!doctype html>
     <!-- variante sem o span.sufixo, para exercitar a rede de seguranca do preload -->
     <a href="http://127.0.0.1:${porta}/baixar/4624732" class="botao-baixar">↓ Baixar .torrent grátis</a>
 </div>
+
+<div class="opcao-cabeca">
+    <label class="opcao-selecionar" for="opcao-3">
+        <span class="opcao-rotulo">720p</span>
+        <span class="opcao-etiquetas"><span class="opcao-preco na">free</span><span>MP4</span></span>
+        <span class="opcao-tamanho">2,0 GB</span>
+    </label>
+    <!-- abre em aba nova: o app tem de capturar sem deixar vazar para o navegador do sistema -->
+    <a href="http://127.0.0.1:${porta}/baixar/4933000" target="_blank" rel="noopener" class="botao-baixar">
+        ↓ Baixar<span class="sufixo"> .torrent</span>
+    </a>
+</div>
 </body></html>`;
 
 const porta = Number(process.argv[2]) || 47110;
 const anuncio = `http://127.0.0.1:${porta}/announce`;
 
+// Pagina de um item: so o botao de baixar. Serve para exercitar a entrada
+// por endereco -- colar a URL da pagina deve achar o .torrent dentro dela.
+const PAGINA_ITEM = (porta, id) => `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Item ${id} · Torrange</title></head>
+<body><h1>Item ${id}</h1>
+<a href="http://127.0.0.1:${porta}/baixar/${id}" class="botao-baixar">↓ Baixar<span class="sufixo"> .torrent</span></a>
+</body></html>`;
+
 const servidor = http.createServer((req, res) => {
+    const item = /^\/item\/(\d+)/.exec(req.url);
+    if (item) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(PAGINA_ITEM(porta, item[1]));
+        return;
+    }
+
+    // Redirecionamento para outra origem, como faz uma CDN: o app tem de
+    // seguir sozinho, sem passar pelo download do Chromium.
+    const desvio = /^\/cdn\/(\d+)/.exec(req.url);
+    if (desvio) {
+        res.writeHead(302, { Location: `http://127.0.0.1:${porta}/baixar/${desvio[1]}` });
+        res.end();
+        return;
+    }
+
     const m = /^\/baixar\/(\d+)/.exec(req.url);
     if (m) {
         const conteudo = Buffer.alloc(200000, `conteudo-de-teste-${m[1]}`);

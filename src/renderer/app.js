@@ -203,6 +203,42 @@ function renderFila(forcar) {
     }
 }
 
+/**
+ * Caixa de entrada da aba Downloads: aceita link magnet e tambem endereco web
+ * -- tanto o link direto do .torrent quanto a pagina do item no Torrange.
+ */
+async function adicionarDaCaixa() {
+    const campo = $('#campo-magnet');
+    const valor = campo.value.trim();
+    if (!valor) return;
+
+    const ehMagnet = valor.startsWith('magnet:');
+    if (!ehMagnet && !/^https?:\/\//i.test(valor)) {
+        aviso('Cole um link magnet ou um endereço que comece com http:// ou https://', 'erro');
+        return;
+    }
+
+    const botao = $('#btn-magnet');
+    campo.value = '';
+    botao.disabled = true;
+    try {
+        if (ehMagnet) await api.fila.adicionarMagnet(valor);
+        else await api.fila.adicionarUrl(valor);
+    } finally {
+        botao.disabled = false;
+    }
+}
+
+async function escolherArquivoTorrent() {
+    const botao = $('#btn-arquivo-torrent');
+    botao.disabled = true;
+    try {
+        await api.fila.escolherArquivo();
+    } finally {
+        botao.disabled = false;
+    }
+}
+
 async function confirmarRemocao(t) {
     const apagar = window.confirm(
         `Remover "${t.name}" da fila?\n\nOK = remover e apagar os arquivos\nCancelar = manter na fila`
@@ -949,15 +985,11 @@ function ligarEventos() {
     $('#btn-recarregar').addEventListener('click', () => api.site.navegar('recarregar'));
 
     // fila
-    $('#btn-magnet').addEventListener('click', async () => {
-        const valor = $('#campo-magnet').value.trim();
-        if (!valor.startsWith('magnet:')) {
-            aviso('Cole um link magnet válido.', 'erro');
-            return;
-        }
-        $('#campo-magnet').value = '';
-        await api.fila.adicionarMagnet(valor);
+    $('#btn-magnet').addEventListener('click', adicionarDaCaixa);
+    $('#campo-magnet').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') adicionarDaCaixa();
     });
+    $('#btn-arquivo-torrent').addEventListener('click', escolherArquivoTorrent);
 
     // biblioteca
     $('#busca-biblioteca').addEventListener('input', (e) => {

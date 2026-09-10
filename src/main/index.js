@@ -6,6 +6,7 @@
  * (processo filho + WebUI API) e o player mpv (janela nativa acoplada).
  */
 const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, protocol, shell } = require('electron');
+const fs = require('fs');
 const path = require('path');
 
 const config = require('./config');
@@ -200,6 +201,65 @@ async function receberMagnet(magnet) {
     }
 }
 
+/**
+ * Entrada por endereco web: aceita o link direto do .torrent e tambem o
+ * endereco da pagina do torrange (nesse caso o proprio site.js acha o botao
+ * de baixar dentro da pagina). A busca sai pela sessao do site, entao um
+ * arquivo que so o usuario logado enxerga tambem funciona.
+ */
+async function receberUrl(endereco) {
+    const texto = String(endereco || '').trim();
+    if (texto.startsWith('magnet:')) return receberMagnet(texto);
+    if (!/^https?:\/\//i.test(texto)) {
+        avisar('Cole um link magnet ou um endereço que comece com http:// ou https://', 'erro');
+        return;
+    }
+    if (!qbitPronto) {
+        avisar('O qBittorrent ainda esta iniciando, tente de novo em instantes.', 'erro');
+        return;
+    }
+    try {
+        const torrent = await site.pegarTorrent(texto, { seguirPagina: true });
+        if (!torrent) {
+            avisar('Esse endereço não devolveu um arquivo .torrent.', 'erro');
+            return;
+        }
+        await receberTorrent(torrent);
+    } catch (erro) {
+        avisar(`Não consegui baixar o torrent: ${erro.message}`, 'erro');
+    }
+}
+
+/** Entrada por arquivo: o usuario escolhe um ou mais .torrent do disco. */
+async function escolherTorrents() {
+    const r = await dialog.showOpenDialog(janela, {
+        title: 'Escolher arquivos .torrent',
+        buttonLabel: 'Adicionar',
+        properties: ['openFile', 'multiSelections'],
+        filters: [
+            { name: 'Arquivos .torrent', extensions: ['torrent'] },
+            { name: 'Todos os arquivos', extensions: ['*'] },
+        ],
+    });
+    if (r.canceled || !r.filePaths.length) return { cancelado: true };
+
+    let adicionados = 0;
+    for (const arquivo of r.filePaths) {
+        try {
+            const dados = fs.readFileSync(arquivo);
+            if (!site.ehBytesTorrent(dados)) {
+                avisar(`${path.basename(arquivo)} não parece um arquivo .torrent.`, 'erro');
+                continue;
+            }
+            await receberTorrent({ dados, nome: path.basename(arquivo) });
+            adicionados++;
+        } catch (erro) {
+            avisar(`Falha ao ler ${path.basename(arquivo)}: ${erro.message}`, 'erro');
+        }
+    }
+    return { adicionados };
+}
+
 // --------------------------------------------------------------------------
 // Monitor
 
@@ -269,6 +329,8 @@ function registrarIpc() {
         return true;
     });
     ipcMain.handle('fila:magnet', (_e, magnet) => receberMagnet(magnet));
+    ipcMain.handle('fila:url', (_e, endereco) => receberUrl(endereco));
+    ipcMain.handle('fila:arquivo', () => escolherTorrents());
 
     ipcMain.handle('biblioteca:listar', () => metadados.aplicar(library.listar()));
 

@@ -156,7 +156,10 @@ button, input, select { font: inherit; color: inherit; }
 
 .cabecalho-tela h1 { font-size: 20px; margin: 0; font-weight: 650; }
 
-.acoes-cabecalho { display: flex; gap: 8px; }
+.acoes-cabecalho { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+/* a caixa da aba Downloads recebe magnet e endereco web: precisa de espaco */
+#campo-magnet { min-width: 300px; flex: 1 1 300px; }
 
 input[type="text"], input[type="search"], input[type="number"], select {
     background: var(--fundo-2);

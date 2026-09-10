@@ -17,10 +17,10 @@ Os instaladores estão publicados em
 
 | Sistema | Arquivo |
 | --- | --- |
-| Windows (instalador) | `Torrange-Setup-1.0.2.exe` |
-| Windows (portátil) | `Torrange-1.0.2-win.zip` |
-| Linux (Debian/Ubuntu) | `torrange_1.0.2_amd64.deb` |
-| Linux (universal) | `Torrange-1.0.2.AppImage` |
+| Windows (instalador) | `Torrange-Setup-1.0.3.exe` |
+| Windows (portátil) | `Torrange-1.0.3-win.zip` |
+| Linux (Debian/Ubuntu) | `torrange_1.0.3_amd64.deb` |
+| Linux (universal) | `Torrange-1.0.3.AppImage` |
 
 Os pacotes são autocontidos: trazem o Electron, o qBittorrent e o mpv dentro.
 Não é preciso instalar Node, npm nem o qBittorrent à parte.
@@ -44,7 +44,7 @@ Nada precisa ser instalado à parte.
 **Linux — Debian/Ubuntu**
 
 ```bash
-sudo apt install ./dist/torrange_1.0.2_amd64.deb
+sudo apt install ./dist/torrange_1.0.3_amd64.deb
 torrange                     # ou pelo menu de aplicativos: "Torrange"
 ```
 
@@ -54,14 +54,14 @@ Para remover: `sudo apt remove torrange`.
 **Linux — qualquer distro (AppImage)**
 
 ```bash
-chmod +x dist/Torrange-1.0.2.AppImage
-./dist/Torrange-1.0.2.AppImage
+chmod +x dist/Torrange-1.0.3.AppImage
+./dist/Torrange-1.0.3.AppImage
 ```
 
 **Windows**
 
-Execute `Torrange-Setup-1.0.2.exe` (instalador, cria atalhos) ou descompacte
-`Torrange-1.0.2-win.zip` e rode `Torrange.exe` (portátil, não instala nada).
+Execute `Torrange-Setup-1.0.3.exe` (instalador, cria atalhos) ou descompacte
+`Torrange-1.0.3-win.zip` e rode `Torrange.exe` (portátil, não instala nada).
 
 **Primeiro uso**
 
@@ -69,7 +69,8 @@ Execute `Torrange-Setup-1.0.2.exe` (instalador, cria atalhos) ou descompacte
 1. Aba **Acervo** → entre com seu e-mail, senha e o código de 6 dígitos. A sessão
    fica salva; é uma vez só.
 2. Abra um título → o botão diz **Baixar**.
-3. Aba **Downloads** acompanha o progresso.
+3. Aba **Downloads** acompanha o progresso. Dá para adicionar por lá também:
+   link magnet, endereço de um torrent ou arquivo `.torrent` do disco.
 4. Aba **Biblioteca** → **Assistir**. O menu de áudio e legenda fica na barra do
    player.
 
@@ -88,10 +89,10 @@ Os instaladores saem em `dist/`:
 
 | Arquivo | Plataforma | Tamanho |
 |---|---|---|
-| `Torrange-Setup-1.0.2.exe` | Windows — instalador | 154 MB |
-| `Torrange-1.0.2-win.zip` | Windows — portátil | 207 MB |
-| `Torrange-1.0.2.AppImage` | Linux — universal | 185 MB |
-| `torrange_1.0.2_amd64.deb` | Linux — Debian/Ubuntu | 147 MB |
+| `Torrange-Setup-1.0.3.exe` | Windows — instalador | 154 MB |
+| `Torrange-1.0.3-win.zip` | Windows — portátil | 207 MB |
+| `Torrange-1.0.3.AppImage` | Linux — universal | 185 MB |
+| `torrange_1.0.3_amd64.deb` | Linux — Debian/Ubuntu | 147 MB |
 
 Para gerar só uma plataforma:
 
@@ -124,7 +125,7 @@ Não dependem do site real nem de credenciais: um servidor local reproduz o mesm
 HTML do botão do torrange e serve um `.torrent` válido.
 
 ```bash
-npm run teste                                     # site, rótulo "Baixar" e qBittorrent
+npm run teste                                     # site, rótulo "Baixar", entradas da aba Downloads e qBittorrent
 npm run teste:player -- /caminho/video.mkv        # player: faixas, busca, pausa
 npm run teste:biblioteca -- /caminho/video.mkv    # pastas, capas e edição
 npm run teste:pacote                              # confere os instaladores gerados
@@ -160,14 +161,33 @@ preload `src/preload/site-inject.js` é a rede de segurança: se aparecer
 
 ### Do clique ao download
 
-O `will-download` da sessão intercepta **qualquer** resposta
-`application/x-bittorrent` (ou URL `.torrent` / `/baixar/<id>`), desvia o arquivo
-para a pasta temporária e o entrega ao qBittorrent pela WebUI API. O `.torrent`
-nunca chega à pasta de Downloads do usuário.
+Toda navegação para um endereço de torrent (URL `.torrent` ou `/baixar/<id>`) é
+**cancelada** em `will-navigate` / `setWindowOpenHandler`, e o arquivo é buscado
+pelo próprio processo principal (`net.request` na sessão do site, então os
+cookies do login vão junto) e entregue ao qBittorrent pela WebUI API. O
+`.torrent` nunca chega à pasta de Downloads do usuário.
 
-Essa camada não depende do HTML do site: se o layout mudar, o download continua
-funcionando. Links `magnet:` são capturados em `will-navigate` e no
-`setWindowOpenHandler`.
+Não passar pelo mecanismo de download do Chromium é proposital: no Windows ele
+podia cancelar o arquivo em silêncio — ou, quando o torrent vinha de outro
+domínio, mandá-lo para o navegador do sistema. Nos dois casos o site
+contabilizava o download e o app não recebia nada.
+
+O `will-download` da sessão continua ativo como rede de segurança, para o caso
+de o site montar o arquivo em JavaScript e usar uma URL `blob:`. Nenhuma dessas
+camadas depende do HTML do site: se o layout mudar, o download continua
+funcionando. Links `magnet:` são capturados nos mesmos dois pontos.
+
+### Outras formas de adicionar um download
+
+A aba **Downloads** aceita, além do que vem do Acervo:
+
+- **link magnet** colado na caixa;
+- **endereço web** — tanto o link direto do `.torrent` quanto o endereço da
+  página do item no Torrange (nesse caso o app procura o botão de baixar dentro
+  da página). A busca sai pela sessão do site, então vale para arquivos que só
+  quem está logado enxerga;
+- **arquivo `.torrent` do disco**, pelo botão *Arquivo .torrent…* (aceita vários
+  de uma vez).
 
 ### qBittorrent embutido
 

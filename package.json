@@ -1,7 +1,7 @@
 {
   "name": "torrange",
   "productName": "Torrange",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Cliente desktop do Torrange com qBittorrent e player mpv integrados",
   "author": "Torrange <contato@torrange.com>",
   "license": "MIT",
