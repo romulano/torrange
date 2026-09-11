@@ -13,7 +13,14 @@ function padroes() {
         videos = app.getPath('home');
     }
     return {
+        // Endereco do site, usado para abrir a pagina de aplicativos no
+        // navegador do sistema (e onde o dono copia o token e autoriza).
         siteUrl: 'https://torrange.com/',
+        // Base da API do aplicativo. Todo o acervo passa por aqui.
+        apiUrl: 'https://torrange.com/api/aplicativo',
+        // Nome que o dono le no site ao lado do botao Permitir. Vazio = o app
+        // monta um a partir do nome da maquina.
+        nomeDoAparelho: '',
         pastaDownloads: path.join(videos, 'Torrange'),
         // Sequencial + primeira/ultima peca liberam o play antes do fim do download.
         downloadSequencial: true,
@@ -22,7 +29,6 @@ function padroes() {
         videoEmJanelaSeparada: false,
         limiteDownload: 0, // KiB/s, 0 = sem limite
         limiteUpload: 0,
-        renomearBotaoBaixar: true,
         volume: 100,
         // Credenciais da WebUI do qBittorrent embutido. Vazias = o app gera uma
         // senha nova a cada execucao, que nunca sai da maquina. Preenchidas,

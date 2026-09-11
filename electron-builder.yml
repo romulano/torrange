@@ -34,6 +34,32 @@ nsis:
   shortcutName: Torrange
   artifactName: Torrange-Setup-${version}.${ext}
 
+# macOS: nao ha build pronto de qbittorrent-nox para Mac, e o mpv que circula
+# esta parado ha anos. Por isso resources/bin/mac costuma vir vazio e o app
+# procura os dois no sistema (Homebrew, MacPorts, Nix) -- ver src/main/paths.js.
+# Quem tiver os binarios e so coloca-los la que eles entram no pacote.
+mac:
+  icon: build/icon.png
+  category: public.app-category.entertainment
+  darkModeSupport: true
+  # Sem certificado de desenvolvedor nao ha como assinar nem notarizar; o
+  # usuario abre a primeira vez pelo menu de contexto -> Abrir.
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  extraResources:
+    - from: resources/bin/mac
+      to: bin
+      filter: ["**/*"]
+
+dmg:
+  artifactName: Torrange-${version}-${arch}.${ext}
+
 linux:
   icon: build/icon.png
   category: AudioVideo

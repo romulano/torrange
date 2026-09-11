@@ -2,21 +2,29 @@
 /**
  * Torrange - processo principal.
  *
- * Junta as tres pecas: o site (WebContentsView), o qBittorrent embutido
+ * Junta quatro pecas: a API do site (token + acervo), o qBittorrent embutido
  * (processo filho + WebUI API) e o player mpv (janela nativa acoplada).
+ *
+ * A conversa com o site e por TOKEN, nao por login: o dono copia o token de
+ * 100 caracteres em torrange.com/aplicativos, cola aqui, autoriza o aparelho
+ * no site e pronto -- nao existe tela de login, nem sessao de navegador, nem
+ * senha viajando para dentro do app.
  */
 const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, protocol, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
+const api = require('./api');
+const conexao = require('./conexao');
 const config = require('./config');
+const credenciais = require('./credenciais');
 const diagnostico = require('./diagnostico');
 const paths = require('./paths');
 const library = require('./library');
 const metadados = require('./metadados');
 const player = require('./player');
 const qbit = require('./qbit');
-const site = require('./site');
+const torrent = require('./torrent');
 
 // Comeca a registrar antes de tudo: o que interessa no diagnostico e
 // justamente a subida do app, que acontece bem antes de alguem pedir o log.
@@ -57,24 +65,34 @@ if (
     return;
 }
 
+/**
+ * No macOS o --wid do mpv depende de uma NSView que o Electron nao promete
+ * manter estavel, e a falha e silenciosa: audio toca, relogio corre, tela
+ * preta -- exatamente o sintoma que o Windows ja deu. Por isso o padrao la e
+ * a janela de video separada, ainda controlada pela interface daqui.
+ */
 const podeEmbutirVideo =
-    process.platform === 'win32' || X11_NA_LINHA || (!SESSAO_WAYLAND && !!process.env.DISPLAY);
+    process.platform === 'win32' || X11_NA_LINHA || (process.platform === 'linux' && !SESSAO_WAYLAND && !!process.env.DISPLAY);
 
 app.setName('Torrange');
 
 /**
- * As capas ficam nos dados do app, fora da pasta da interface, entao o
- * file:// do renderer nao alcanca. Um esquema proprio resolve sem afrouxar a
- * CSP: capa://img/<arquivo>, servido so a partir da pasta de capas.
+ * Dois esquemas proprios, os dois servidos so pelo processo principal:
+ *
+ *   capa://img/<arquivo>  as capas que o usuario escolheu, guardadas nos dados
+ *                         do app (fora do alcance do file:// do renderer);
+ *   acervo://capa/<item>  as capas do acervo, que so a API entrega e so com o
+ *                         token nos cabecalhos -- o renderer nunca ve o token.
  */
 protocol.registerSchemesAsPrivileged([
     { scheme: 'capa', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    { scheme: 'acervo', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
 let janela = null;
 let monitor = null;
-let abaAtual = 'site';
-let retangulos = { site: null, player: null };
+let abaAtual = 'acervo';
+let retangulos = { player: null };
 const progressoAnterior = new Map();
 let encerrando = false;
 let qbitPronto = false;
@@ -153,13 +171,6 @@ function criarJanela() {
         }
         enviar('player:evento', evento);
     });
-
-    site.criar(janela, config, {
-        aoTorrent: receberTorrent,
-        aoMagnet: receberMagnet,
-        aoNavegar: (dados) => enviar('site:navegou', dados),
-        aoErro: (texto) => avisar(texto, 'erro'),
-    });
 }
 
 function alternarTelaCheia() {
@@ -168,12 +179,9 @@ function alternarTelaCheia() {
     enviar('player:evento', { tipo: 'tela-cheia', valor: janela.isFullScreen() });
 }
 
-/** A interface manda os retangulos; aqui posicionamos as views nativas. */
+/** A interface manda o retangulo do video; aqui posicionamos a janela nativa. */
 function aplicarLayout() {
     if (!janela || janela.isDestroyed()) return;
-
-    if (abaAtual === 'site' && retangulos.site) site.definirRetangulo(retangulos.site);
-    else site.esconder();
 
     if (abaAtual === 'player' && retangulos.player && player.aberto) {
         player.definirRetangulo(retangulos.player);
@@ -181,6 +189,13 @@ function aplicarLayout() {
     } else {
         player.esconder();
     }
+}
+
+// --------------------------------------------------------------------------
+// Conexao com o site
+
+function publicarConexao(estado) {
+    enviar('conexao:estado', estado);
 }
 
 // --------------------------------------------------------------------------
@@ -214,7 +229,7 @@ async function despejarPendentes() {
 async function receberTorrent({ dados, nome }) {
     if (!qbitPronto) {
         enfileirar({ dados, nome }, (nome || 'torrent').replace(/\.torrent$/i, ''));
-        return;
+        return { esperando: true };
     }
     try {
         const t = await qbit.adicionar({ dados, nome }, config.ler());
@@ -222,47 +237,50 @@ async function receberTorrent({ dados, nome }) {
         avisar(`Baixando: ${titulo}`, 'ok');
         notificar('Download iniciado', titulo);
         await atualizar();
+        return { ok: true, titulo };
     } catch (erro) {
         avisar(erro.message, 'erro');
+        return { erro: erro.message };
     }
 }
 
 async function receberMagnet(magnet) {
     if (!qbitPronto) {
         enfileirar({ magnet }, 'o link magnet');
-        return;
+        return { esperando: true };
     }
     try {
         const t = await qbit.adicionar({ magnet }, config.ler());
         avisar(`Baixando: ${(t && t.name) || 'magnet'}`, 'ok');
         await atualizar();
+        return { ok: true };
     } catch (erro) {
         avisar(erro.message, 'erro');
+        return { erro: erro.message };
     }
 }
 
 /**
  * Entrada por endereco web: aceita o link direto do .torrent e tambem o
- * endereco da pagina do torrange (nesse caso o proprio site.js acha o botao
- * de baixar dentro da pagina). A busca sai pela sessao do site, entao um
- * arquivo que so o usuario logado enxerga tambem funciona.
+ * endereco de uma pagina que tenha o link dentro dela.
  */
 async function receberUrl(endereco) {
     const texto = String(endereco || '').trim();
     if (texto.startsWith('magnet:')) return receberMagnet(texto);
     if (!/^https?:\/\//i.test(texto)) {
         avisar('Cole um link magnet ou um endereço que comece com http:// ou https://', 'erro');
-        return;
+        return { erro: 'endereço inválido' };
     }
     try {
-        const torrent = await site.pegarTorrent(texto, { seguirPagina: true });
-        if (!torrent) {
+        const arquivo = await torrent.pegar(texto, { seguirPagina: true });
+        if (!arquivo) {
             avisar('Esse endereço não devolveu um arquivo .torrent.', 'erro');
-            return;
+            return { erro: 'sem torrent' };
         }
-        await receberTorrent(torrent);
+        return await receberTorrent(arquivo);
     } catch (erro) {
         avisar(`Não consegui baixar o torrent: ${erro.message}`, 'erro');
+        return { erro: erro.message };
     }
 }
 
@@ -283,7 +301,7 @@ async function escolherTorrents() {
     for (const arquivo of r.filePaths) {
         try {
             const dados = fs.readFileSync(arquivo);
-            if (!site.ehBytesTorrent(dados)) {
+            if (!torrent.ehBytesTorrent(dados)) {
                 avisar(`${path.basename(arquivo)} não parece um arquivo .torrent.`, 'erro');
                 continue;
             }
@@ -294,6 +312,86 @@ async function escolherTorrents() {
         }
     }
     return { adicionados };
+}
+
+// --------------------------------------------------------------------------
+// Acervo (API do site)
+
+/**
+ * Envelopa uma chamada da API: o renderer recebe sempre { ok } ou
+ * { erro, mensagem }, e a maquina de estados da conexao fica sabendo quando a
+ * recusa foi de autorizacao (token trocado, aparelho removido, assinatura).
+ */
+async function chamarApi(fn) {
+    try {
+        return { ok: true, dados: await fn() };
+    } catch (erro) {
+        await conexao.registrarFalha(erro, config.ler());
+        return {
+            ok: false,
+            erro: erro.erro || 'falha',
+            mensagem: erro.message || 'Não consegui falar com o site.',
+            retryAfter: erro.retryAfter || 0,
+            // O corpo da recusa vai junto: e nele que vem o preco novo do
+            // preco_mudou e o saldo do sem_saldo, que a tela precisa mostrar.
+            dados: erro.dados || null,
+        };
+    }
+}
+
+// As capas vem dezenas por tela; guardamos as ultimas para nao bater na API
+// a cada rolagem (o teto da rota e de 300 por minuto).
+const capasEmCache = new Map();
+const MAX_CAPAS = 240;
+
+async function capaDoAcervo(item) {
+    if (capasEmCache.has(item)) return capasEmCache.get(item);
+    let resultado = null;
+    try {
+        resultado = await api.capa(item);
+    } catch {
+        resultado = null; // capa que falha e um quadrado vazio, nao um erro na tela
+    }
+    if (capasEmCache.size >= MAX_CAPAS) {
+        capasEmCache.delete(capasEmCache.keys().next().value);
+    }
+    capasEmCache.set(item, resultado);
+    return resultado;
+}
+
+/**
+ * Baixar uma opcao do acervo.
+ *
+ * O GET nunca debita: se a opcao for free o arquivo vem na hora. Se custar
+ * gema, a API responde 402 com preco e saldo e NADA acontece -- a confirmacao
+ * volta para a tela, e so o POST (em confirmarDownload) cobra.
+ */
+async function baixarDoAcervo(item) {
+    const r = await chamarApi(() => api.baixar(item));
+    if (!r.ok) return r;
+
+    if (r.dados.confirmacao) return { ok: true, confirmacao: r.dados.confirmacao };
+
+    const entrada = await receberTorrent(r.dados.torrent);
+    return Object.assign({ ok: true, baixando: true }, entrada);
+}
+
+/**
+ * Confirma um download pago. Sem retry, de proposito: o servidor entrega e
+ * cobra cada chamada por si, entao repetir depois de um timeout debitaria
+ * duas vezes. Se a resposta nao chegar, o saldo e conferido em /conta.
+ */
+async function confirmarDownload(item, preco) {
+    const r = await chamarApi(() => api.confirmarBaixar(item, preco));
+    if (!r.ok) {
+        // "o preco virou entre a confirmacao e o POST": nada foi debitado e a
+        // resposta ja traz o valor de agora, entao a tela pode reperguntar.
+        if (r.erro === 'preco_mudou' || r.erro === 'sem_saldo') return r;
+        return r;
+    }
+    const entrada = await receberTorrent(r.dados.torrent);
+    await conexao.atualizarConta(config.ler()); // o saldo mudou
+    return Object.assign({ ok: true, baixando: true }, entrada);
 }
 
 // --------------------------------------------------------------------------
@@ -347,14 +445,40 @@ function registrarIpc() {
         enviar('player:evento', { tipo: 'tela-cheia', valor: janela.isFullScreen() });
     });
 
-    ipcMain.on('site:navegar', (_e, acao, url) => site.navegar(acao, url || config.ler().siteUrl));
+    // ------------------------------------------------------------ conexao
+    ipcMain.handle('conexao:estado', () => conexao.estado());
 
-    ipcMain.handle('site:sair', async () => {
-        await site.limparSessao();
-        site.navegar('inicio', config.ler().siteUrl);
+    ipcMain.handle('conexao:definir-token', async (_e, texto) => {
+        const r = await conexao.definirToken(texto, config.ler());
+        if (!r.ok) return r;
+        capasEmCache.clear(); // outra conta enxerga outro acervo
+        return r;
+    });
+
+    ipcMain.handle('conexao:esquecer', () => {
+        capasEmCache.clear();
+        return conexao.esquecerToken();
+    });
+
+    ipcMain.handle('conexao:verificar', () => conexao.reverificar(config.ler()));
+
+    ipcMain.handle('conexao:abrir-site', async () => {
+        await shell.openExternal(conexao.paginaAplicativos());
         return true;
     });
 
+    // ------------------------------------------------------------- acervo
+    ipcMain.handle('acervo:listar', (_e, filtros) => chamarApi(() => api.acervo(filtros || {})));
+    ipcMain.handle('acervo:titulo', (_e, chave) => chamarApi(() => api.titulo(chave)));
+    ipcMain.handle('acervo:favoritos', (_e, pagina) => chamarApi(() => api.favoritos(pagina || 1)));
+    ipcMain.handle('acervo:baixados', (_e, pagina) => chamarApi(() => api.baixados(pagina || 1)));
+    ipcMain.handle('acervo:favoritar', (_e, chave, item) =>
+        chamarApi(() => api.alternarFavorito(chave, item))
+    );
+    ipcMain.handle('acervo:baixar', (_e, item) => baixarDoAcervo(item));
+    ipcMain.handle('acervo:confirmar', (_e, item, preco) => confirmarDownload(item, preco));
+
+    // --------------------------------------------------------------- fila
     ipcMain.handle('fila:listar', () => library.snapshot());
     ipcMain.handle('fila:pausar', (_e, hash) => qbit.pausar(hash).then(atualizar));
     ipcMain.handle('fila:retomar', (_e, hash) => qbit.retomar(hash).then(atualizar));
@@ -488,6 +612,9 @@ function registrarIpc() {
         qbitUsuario: qbit.usuario(),
         qbitCredencialTemporaria: qbit.usandoCredencialTemporaria(),
         dados: app.getPath('userData'),
+        api: api.base(),
+        // o token nunca sai daqui: so a forma mascarada e o id da instalacao
+        conexao: credenciais.resumo(),
         // caminhos dos binarios embutidos: a primeira coisa a conferir quando
         // o qBittorrent ou o player nao sobem
         binarios: { qbit: paths.binarioQbit(), mpv: paths.binarioMpv() },
@@ -547,7 +674,11 @@ function registrarIpc() {
                 ('qbitSenha' in parcial && parcial.qbitSenha !== antes.qbitSenha));
 
         const novo = config.gravar(parcial);
-        if (parcial && parcial.siteUrl) site.navegar('inicio', novo.siteUrl);
+        if (parcial && parcial.apiUrl) {
+            api.configurar(novo.apiUrl);
+            capasEmCache.clear();
+        }
+        conexao.configurar({ config: novo, aoEstado: publicarConexao });
 
         // As credenciais entram no qBittorrent.conf, que so e lido na subida:
         // sem religar, o que o usuario acabou de digitar nao valeria nada.
@@ -586,9 +717,24 @@ async function reunirDiagnostico() {
         dadosPlayer = { erro: erro.message };
     }
 
+    const estadoConexao = conexao.estado();
+
     return {
         config: config.ler(),
         estadoQbit,
+        // O token JAMAIS entra aqui: este arquivo nasceu para ser anexado num
+        // relato de problema. Vai so a forma mascarada e o id da instalacao.
+        conexao: {
+            fase: estadoConexao.fase,
+            erro: estadoConexao.erro,
+            mensagem: estadoConexao.mensagem,
+            verificadoEm: estadoConexao.verificadoEm,
+            aplicativo: estadoConexao.aplicativo,
+            gemas: estadoConexao.gemas,
+            temPasskey: estadoConexao.conta ? estadoConexao.conta.tem_passkey : null,
+            api: api.base(),
+            credenciais: credenciais.resumo(),
+        },
         qbit: {
             ativo: qbit.ativo,
             porta: qbit.porta,
@@ -677,8 +823,26 @@ if (!instanciaUnica) {
             });
         });
 
+        protocol.handle('acervo', async (requisicao) => {
+            const url = new URL(requisicao.url);
+            if (url.hostname !== 'capa') return new Response('', { status: 404 });
+            const item = decodeURIComponent(url.pathname.replace(/^\//, ''));
+            if (!/^[A-Za-z0-9_-]{1,64}$/.test(item)) return new Response('', { status: 400 });
+            const capa = await capaDoAcervo(item);
+            if (!capa) return new Response('', { status: 404 });
+            return new Response(capa.bytes, {
+                headers: { 'content-type': capa.tipo, 'cache-control': 'no-cache' },
+            });
+        });
+
         registrarIpc();
         criarJanela();
+
+        const cfg = config.ler();
+        api.configurar(cfg.apiUrl);
+        conexao.configurar({ config: cfg, aoEstado: publicarConexao });
+        conexao.iniciar(cfg).then(publicarConexao);
+
         subirQbit();
 
         app.on('activate', () => {
@@ -694,6 +858,7 @@ app.on('before-quit', (evento) => {
     evento.preventDefault();
     encerrando = true;
     clearInterval(monitor);
+    conexao.encerrar();
     (async () => {
         try {
             await player.fechar();

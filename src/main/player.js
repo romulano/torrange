@@ -14,7 +14,7 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 
-const { binarioMpv, pastaDados } = require('./paths');
+const { binarioMpv, comoInstalar, pastaDados } = require('./paths');
 
 // Propriedades que o mpv nos avisa quando mudam.
 const OBSERVADAS = [
@@ -51,7 +51,10 @@ let embutirPermitido = process.platform === 'win32';
 
 function idJanelaNativa(janela) {
     const buf = janela.getNativeWindowHandle();
-    if (process.platform === 'win32') {
+    // No Windows (HWND) e no macOS (ponteiro para a NSView) o handle e de 64
+    // bits; no X11 e um XID de 32. Ler o tamanho errado devolve um id invalido
+    // e o mpv morre com "BadWindow" em vez de abrir.
+    if (process.platform === 'win32' || process.platform === 'darwin') {
         return buf.length >= 8 ? buf.readBigUInt64LE(0).toString() : String(buf.readUInt32LE(0));
     }
     return String(buf.readUInt32LE(0));
@@ -182,6 +185,18 @@ function configurar(janela, opcoes, callback) {
     }
 }
 
+/**
+ * A lista de saidas de video e POR PLATAFORMA: "x11" so existe no Linux e
+ * "direct3d" so no Windows. Passar um VO inexistente faz o mpv ficar sem
+ * imagem -- o audio toca e o relogio corre, mas a tela fica preta. Foi
+ * exatamente esse o bug do Windows.
+ */
+function saidasDeVideo() {
+    if (process.platform === 'win32') return '--vo=gpu,direct3d';
+    if (process.platform === 'darwin') return '--vo=gpu,libmpv';
+    return '--vo=gpu,x11';
+}
+
 /** Argumentos fixos do mpv (tudo menos o --wid, que depende da janela). */
 function argumentosMpv({ caminho, posicao, volume, soquete }) {
     return [
@@ -196,10 +211,7 @@ function argumentosMpv({ caminho, posicao, volume, soquete }) {
         '--osc=no',
         '--osd-level=1',
         '--hwdec=auto-safe',
-        // A lista de saidas de video e por plataforma: "x11" so existe no Linux.
-        // Passar um VO inexistente faz o mpv ficar sem imagem (audio e relogio
-        // continuam correndo) -- foi o que deu tela preta no Windows.
-        process.platform === 'win32' ? '--vo=gpu,direct3d' : '--vo=gpu,x11',
+        saidasDeVideo(),
         '--sub-auto=fuzzy',
         '--audio-file-auto=fuzzy',
         '--sub-visibility=yes',
@@ -252,7 +264,7 @@ async function subirMpv({ caminho, posicao, volume, comWid }) {
         args.unshift(`--wid=${wid}`);
         // o --wid so existe no X11: se a sessao e Wayland, tira a variavel para
         // o mpv nao tentar falar direto com o compositor
-        if (process.platform !== 'win32') delete ambiente.WAYLAND_DISPLAY;
+        if (process.platform === 'linux') delete ambiente.WAYLAND_DISPLAY;
     }
 
     const proc = spawn(binarioMpv(), args, {
@@ -299,7 +311,7 @@ async function subirMpv({ caminho, posicao, volume, comWid }) {
 async function abrir({ caminho, posicao = 0, volume = 100, janelaSeparada = false }) {
     const executavel = binarioMpv();
     if (!fs.existsSync(executavel)) {
-        throw new Error(`mpv nao encontrado em ${executavel}. Rode "npm run binaries" antes.`);
+        throw new Error(`mpv não encontrado em ${executavel}. ${comoInstalar('mpv')}`);
     }
     if (!fs.existsSync(caminho)) {
         throw new Error(`Arquivo nao encontrado: ${caminho}`);

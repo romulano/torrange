@@ -145,6 +145,7 @@ function espacoEmDisco(pasta) {
 async function montar(fontes = {}) {
     const {
         config = {},
+        conexao = null,
         estadoQbit = {},
         qbit = {},
         player = null,
@@ -213,6 +214,12 @@ async function montar(fontes = {}) {
     if (configSegura.qbitSenha) configSegura.qbitSenha = '<definida, omitida daqui>';
     partes.push(comoTexto(configSegura));
     partes.push(`\npasta de downloads: ${comoTexto(espacoEmDisco(config.pastaDownloads || os.homedir()))}`);
+
+    partes.push(secao('Conexão com o site'));
+    // O TOKEN NUNCA ENTRA AQUI. Este arquivo nasceu para ser anexado num
+    // relato de problema, e quem tem o token pede acesso a conta inteira --
+    // so vai a forma mascarada, que serve para conferir qual token e.
+    partes.push(conexao ? comoTexto(conexao) : '(não consegui coletar)');
 
     partes.push(secao('qBittorrent'));
     partes.push(

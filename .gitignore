@@ -6,8 +6,10 @@ dist/
 # binarios de terceiros baixados pelo scripts/fetch-binaries.sh
 resources/bin/win/*
 resources/bin/linux/*
+resources/bin/mac/*
 !resources/bin/win/.gitkeep
 !resources/bin/linux/.gitkeep
+!resources/bin/mac/.gitkeep
 
 # artefatos de empacotamento (distribuidos via GitHub Releases)
 *.AppImage
@@ -25,3 +27,11 @@ builder-debug.yml
 latest*.yml
 
 *.log
+
+# segredos locais (o token da conta nunca vai para o repositorio)
+token.bin
+instalacao.json
+
+# pagina da especificacao da API salva localmente (referencia, nao fonte)
+API do Aplicativo torrange.html
+API do Aplicativo torrange_files/

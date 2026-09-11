@@ -12,7 +12,7 @@ const http = require('http');
 const net = require('net');
 const path = require('path');
 
-const { binarioQbit, pastaDados, garantirPasta } = require('./paths');
+const { binarioQbit, comoInstalar, pastaDados, garantirPasta } = require('./paths');
 
 const CATEGORIA = 'torrange';
 const USUARIO_PADRAO = 'torrange';
@@ -397,7 +397,7 @@ async function subir(config, aoLog) {
     const executavel = binarioQbit();
     if (!fs.existsSync(executavel)) {
         throw new Error(
-            `qbittorrent-nox nao encontrado em ${executavel}. Rode "npm run binaries" antes.`
+            `qbittorrent-nox não encontrado em ${executavel}. ${comoInstalar('qbit')}`
         );
     }
 

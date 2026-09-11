@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const eventos = [
-    'site:navegou',
+    'conexao:estado',
     'fila:atualizou',
     'biblioteca:atualizou',
     'player:evento',
@@ -16,9 +16,26 @@ contextBridge.exposeInMainWorld('torrange', {
         layout: (retangulos) => ipcRenderer.send('ui:layout', retangulos),
         telaCheia: (ligar) => ipcRenderer.send('ui:tela-cheia', ligar),
     },
-    site: {
-        navegar: (acao, url) => ipcRenderer.send('site:navegar', acao, url),
-        sair: () => ipcRenderer.invoke('site:sair'),
+    /**
+     * Conexao com o site. Repare no que NAO esta aqui: nao ha como ler o
+     * token. A interface so o escreve e ve a forma mascarada -- o segredo
+     * nunca chega ao renderer.
+     */
+    conexao: {
+        estado: () => ipcRenderer.invoke('conexao:estado'),
+        definirToken: (texto) => ipcRenderer.invoke('conexao:definir-token', texto),
+        esquecer: () => ipcRenderer.invoke('conexao:esquecer'),
+        verificar: () => ipcRenderer.invoke('conexao:verificar'),
+        abrirSite: () => ipcRenderer.invoke('conexao:abrir-site'),
+    },
+    acervo: {
+        listar: (filtros) => ipcRenderer.invoke('acervo:listar', filtros),
+        titulo: (chave) => ipcRenderer.invoke('acervo:titulo', chave),
+        favoritos: (pagina) => ipcRenderer.invoke('acervo:favoritos', pagina),
+        baixados: (pagina) => ipcRenderer.invoke('acervo:baixados', pagina),
+        favoritar: (chave, item) => ipcRenderer.invoke('acervo:favoritar', chave, item),
+        baixar: (item) => ipcRenderer.invoke('acervo:baixar', item),
+        confirmar: (item, preco) => ipcRenderer.invoke('acervo:confirmar', item, preco),
     },
     fila: {
         listar: () => ipcRenderer.invoke('fila:listar'),

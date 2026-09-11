@@ -73,7 +73,7 @@ function torrentDoArquivo(caminho) {
             return;
         }
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end('<a class="botao-baixar" href="/baixar/1">Baixar</a>');
+        res.end('<a href="/baixar/1">Baixar</a>');
     });
     await new Promise((r) => servidor.listen(PORTA_SITE, '127.0.0.1', r));
 
@@ -93,22 +93,21 @@ function torrentDoArquivo(caminho) {
         { cwd: RAIZ, env: ambiente, stdio: ['ignore', 'pipe', 'pipe'] });
 
     let ui = null;
-    let site = null;
     const errosDeConsole = [];
 
     try {
         const alvoUi = await acharAlvo(PORTA_CDP, (a) => a.url.includes('renderer/index.html'));
-        const alvoSite = await acharAlvo(PORTA_CDP, (a) => a.url.includes(`:${PORTA_SITE}`));
-        if (!alvoUi || !alvoSite) throw new Error('as views do app nao apareceram');
+        if (!alvoUi) throw new Error('a interface do app nao apareceu');
         ui = await Alvo.conectar(alvoUi.webSocketDebuggerUrl);
-        site = await Alvo.conectar(alvoSite.webSocketDebuggerUrl);
         ui.vigiarErros('interface', errosDeConsole);
         await ui.enviar('Runtime.enable');
-        await site.enviar('Runtime.enable');
         await espera(1000);
 
-        // uma entrada de verdade na biblioteca
-        await site.avaliar(`document.querySelector('a.botao-baixar').click(); true`);
+        // Uma entrada de verdade na biblioteca. Entra pela caixa de endereco
+        // da aba Downloads: a biblioteca nao depende de como o torrent chegou.
+        await ui.avaliar(
+            `window.torrange.fila.adicionarUrl(${JSON.stringify(`http://127.0.0.1:${PORTA_SITE}/baixar/1`)})`
+        );
         let entrada = null;
         for (let i = 0; i < 120; i++) {
             await espera(1000);
@@ -228,7 +227,6 @@ function torrentDoArquivo(caminho) {
         falhas++;
     } finally {
         if (ui) ui.fechar();
-        if (site) site.fechar();
         await encerrarApp(PORTA_CDP, app);
         servidor.close();
         fs.rmSync(perfil, { recursive: true, force: true });

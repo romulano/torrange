@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Baixa e desempacota qbittorrent-nox e mpv para resources/bin/{win,linux}.
 # Idempotente: se o binario ja existe, pula.
+#
+# macOS nao entra aqui de proposito: nao existe build pronto de qbittorrent-nox
+# para Mac e o mpv que circula esta parado ha anos, entao la o app usa o que
+# estiver instalado no sistema (ver src/main/paths.js). Quem tiver os seus
+# binarios coloca em resources/bin/mac/ e eles vao para dentro do pacote.
 set -euo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -8,10 +13,10 @@ CACHE="$RAIZ/.cache/binarios"
 BIN="$RAIZ/resources/bin"
 MANIFESTO="$RAIZ/scripts/binaries.manifest"
 
-ALVO="${1:-todos}"   # win | linux | todos
+ALVO="${1:-todos}"   # win | linux | mac | todos
 quer() { [ "$ALVO" = "todos" ] || [ "$ALVO" = "$1" ]; }
 
-mkdir -p "$CACHE" "$BIN/win" "$BIN/linux"
+mkdir -p "$CACHE" "$BIN/win" "$BIN/linux" "$BIN/mac"
 
 # O .7z do mpv para Windows precisa de um extrator; no Docker vem o p7zip-full.
 extrator_7z() {
@@ -134,5 +139,21 @@ elif quer linux; then
     echo ">> mpv (Linux) ja presente"
 fi
 
+# ----------------------------------------------------------------- macOS
+if quer mac; then
+    faltando=""
+    [ -x "$BIN/mac/qbittorrent/qbittorrent-nox" ] || faltando="qbittorrent-nox"
+    [ -e "$BIN/mac/mpv/mpv.app/Contents/MacOS/mpv" ] || faltando="$faltando mpv"
+    if [ -n "$faltando" ]; then
+        echo ">> macOS: nao ha binario pronto para baixar ($faltando)."
+        echo "   O app procura no sistema (Homebrew, MacPorts, Nix). Para empacotar"
+        echo "   os seus, coloque em:"
+        echo "     $BIN/mac/qbittorrent/qbittorrent-nox"
+        echo "     $BIN/mac/mpv/mpv.app/Contents/MacOS/mpv"
+    else
+        echo ">> macOS: binarios ja presentes"
+    fi
+fi
+
 echo ">> Binarios prontos:"
-du -sh "$BIN/win" "$BIN/linux" 2>/dev/null || true
+du -sh "$BIN/win" "$BIN/linux" "$BIN/mac" 2>/dev/null || true

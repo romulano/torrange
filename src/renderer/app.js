@@ -5,7 +5,7 @@ const api = window.torrange;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-let abaAtual = 'site';
+let abaAtual = 'acervo';
 let fila = [];
 let biblioteca = [];
 let configuracao = {};
@@ -108,10 +108,9 @@ function trocarAba(nome) {
     abaAtual = nome;
     $$('.aba').forEach((b) => b.classList.toggle('ativa', b.dataset.aba === nome));
     $$('.tela').forEach((t) => t.classList.toggle('ativa', t.id === `tela-${nome}`));
-    $('#nav-site').style.visibility = nome === 'site' ? 'visible' : 'hidden';
     $('#pilula-player').hidden = !(player.aberto && nome !== 'player');
 
-    // as views nativas so podem ser posicionadas depois que o layout assentou
+    // a view nativa do video so pode ser posicionada depois que o layout assentou
     requestAnimationFrame(() => {
         enviarLayout();
         api.ui.aba(nome);
@@ -126,10 +125,628 @@ function retangulo(seletor) {
 }
 
 function enviarLayout() {
-    api.ui.layout({ site: retangulo('#area-site'), player: retangulo('#area-video') });
+    api.ui.layout({ player: retangulo('#area-video') });
 }
 
-// ------------------------------------------------------------- estado do qbit
+// ==========================================================================
+// Conexao com o site (token e autorizacao)
+// ==========================================================================
+
+let estadoConexao = { fase: 'sem-token', erro: '', mensagem: '' };
+
+const TITULOS_DE_ERRO = {
+    conta_inativa: 'Esta conta foi removida',
+    assinatura_inativa: 'A assinatura não está em dia',
+    sem_vaga: 'Sua conta já tem três aparelhos',
+    instalacao_ausente: 'Este aparelho foi recusado',
+};
+
+function renderConexao() {
+    const { fase } = estadoConexao;
+    const aprovado = fase === 'aprovado';
+
+    $('#gate-conexao').hidden = aprovado;
+    $('#acervo-conteudo').hidden = !aprovado;
+
+    $('#painel-token').hidden = fase !== 'sem-token';
+    $('#painel-espera').hidden = !(fase === 'pendente' || fase === 'conectando');
+    $('#painel-erro-conexao').hidden = fase !== 'erro';
+
+    if (fase === 'pendente' || fase === 'conectando') {
+        // Sem rede o app tambem fica esperando, mas por outro motivo -- dizer
+        // "esperando a autorizacao" ali mandaria o usuario procurar no site um
+        // botao que ele ja apertou.
+        const semRede = estadoConexao.erro === 'sem_rede';
+        $('#espera-titulo').textContent = semRede
+            ? 'Sem resposta do site'
+            : 'Esperando a autorização';
+        $('#espera-mensagem').textContent =
+            estadoConexao.mensagem ||
+            'Este aplicativo já se apresentou à sua conta. Falta você permitir o acesso no site.';
+        $('#espera-aparelho').textContent =
+            (estadoConexao.aplicativo && estadoConexao.aplicativo.nome) || '—';
+        $('#espera-token').textContent = estadoConexao.tokenMascarado || '—';
+        $('#espera-vagas').textContent =
+            typeof estadoConexao.vagasLivres === 'number' ? String(estadoConexao.vagasLivres) : '—';
+    }
+
+    if (fase === 'erro') {
+        $('#erro-conexao-titulo').textContent =
+            TITULOS_DE_ERRO[estadoConexao.erro] || 'Não consegui conectar';
+        $('#erro-conexao-texto').textContent = estadoConexao.mensagem || '';
+    }
+
+    // barra do topo: conta e gemas
+    const barra = $('#conta-barra');
+    barra.hidden = !aprovado;
+    if (aprovado) {
+        const gemas = estadoConexao.gemas || {};
+        $('#gemas-barra').textContent = `◆ ${gemas.total ?? 0}`;
+        $('#gemas-barra').title =
+            `Gemas: ${gemas.total ?? 0} (do plano: ${gemas.plano ?? 0}, compradas: ${gemas.paga ?? 0})`;
+        $('#conta-nome').textContent = (estadoConexao.conta && estadoConexao.conta.nome) || '';
+    }
+
+    renderConexaoNosAjustes();
+}
+
+const ROTULO_DE_FASE = {
+    'sem-token': 'sem token',
+    conectando: 'apresentando o aparelho…',
+    pendente: 'esperando a autorização no site',
+    aprovado: 'conectado',
+    erro: 'com problema',
+};
+
+function renderConexaoNosAjustes() {
+    $('#cfg-conexao-fase').textContent = ROTULO_DE_FASE[estadoConexao.fase] || estadoConexao.fase;
+    $('#cfg-token').textContent = estadoConexao.tokenMascarado || '(nenhum)';
+    $('#cfg-token-protegido').textContent =
+        estadoConexao.protegidoPeloCofre === null
+            ? '—'
+            : estadoConexao.protegidoPeloCofre
+              ? 'cifrado pelo cofre do sistema'
+              : 'em arquivo próprio (este sistema não tem cofre)';
+    $('#cfg-instalacao').textContent = estadoConexao.instalacao || '—';
+
+    const conta = estadoConexao.conta;
+    $('#cfg-conta').textContent = conta ? `${conta.nome} · ${conta.email}` : '—';
+
+    const gemas = estadoConexao.gemas;
+    $('#cfg-gemas').textContent = gemas
+        ? `${gemas.total} (plano ${gemas.plano} + compradas ${gemas.paga})`
+        : '—';
+
+    // Sem passkey nenhum download sai, nem o free -- e o app nao resolve isso.
+    if (conta && conta.tem_passkey === false) {
+        $('#cfg-conta').textContent += ' — sem passkey: nenhum download sai';
+    }
+}
+
+function aplicarEstadoConexao(estado) {
+    if (!estado) return;
+    const antes = estadoConexao.fase;
+    estadoConexao = estado;
+    renderConexao();
+
+    // Assim que a autorizacao sai, o acervo aparece sozinho.
+    if (antes !== 'aprovado' && estado.fase === 'aprovado') {
+        aviso('Aparelho autorizado. Bem-vindo!', 'ok');
+        carregarAcervo({ pagina: 1 });
+    }
+}
+
+async function salvarToken() {
+    const botao = $('#btn-salvar-token');
+    const campo = $('#campo-token');
+    const erro = $('#erro-token');
+    erro.hidden = true;
+
+    botao.disabled = true;
+    const rotulo = botao.textContent;
+    botao.textContent = 'Conectando…';
+    try {
+        const r = await api.conexao.definirToken(campo.value);
+        if (!r.ok) {
+            erro.hidden = false;
+            erro.textContent = r.mensagem;
+            return;
+        }
+        campo.value = '';
+        atualizarContagemToken();
+        aplicarEstadoConexao(r.estado);
+    } finally {
+        botao.disabled = false;
+        botao.textContent = rotulo;
+    }
+}
+
+function atualizarContagemToken() {
+    const limpo = $('#campo-token').value.replace(/[\s"']/g, '');
+    const alvo = $('#contagem-token');
+    alvo.textContent = `${limpo.length} de 100 caracteres`;
+    alvo.classList.toggle('ok', limpo.length === 100);
+}
+
+async function verificarConexao(botao) {
+    const rotulo = botao ? botao.textContent : '';
+    if (botao) {
+        botao.disabled = true;
+        botao.textContent = 'Verificando…';
+    }
+    try {
+        aplicarEstadoConexao(await api.conexao.verificar());
+    } finally {
+        if (botao) {
+            botao.disabled = false;
+            botao.textContent = rotulo;
+        }
+    }
+}
+
+async function esquecerToken() {
+    const certeza = window.confirm(
+        'Desconectar este aparelho?\n\n' +
+            'O token guardado aqui é apagado e o acervo deixa de abrir até você colar um de novo. ' +
+            'A vaga no site continua ocupada até você removê-la por lá.'
+    );
+    if (!certeza) return;
+    aplicarEstadoConexao(await api.conexao.esquecer());
+    trocarAba('acervo');
+}
+
+// ==========================================================================
+// Acervo
+// ==========================================================================
+
+const CATEGORIAS = [
+    'filme', 'serie', 'anime', 'jogos', 'cursos', 'e-books', 'hq', 'manga',
+    'revistas', 'audiobooks', 'esportes', 'jornais', 'aplicativos',
+    'stand up comedy', 'adultas', 'outros',
+];
+
+let listaAtual = 'acervo'; // acervo | favoritos | baixados
+let paginaAtual = 1;
+let totalPaginas = 1;
+let precoDaGema = 0;
+let carregandoAcervo = false;
+
+function filtrosAtuais() {
+    return {
+        q: $('#busca-acervo').value.trim(),
+        categoria: $('#filtro-categoria').value,
+        res: $('#filtro-res').value,
+        decada: $('#filtro-decada').value,
+        ordem: $('#filtro-ordem').value,
+        por: $('#filtro-por').value,
+        free: $('#filtro-free').checked ? 1 : '',
+        page: paginaAtual,
+    };
+}
+
+function preencherCategorias() {
+    const select = $('#filtro-categoria');
+    select.replaceChildren();
+    const todas = elemento('option', null, 'todas');
+    todas.value = '';
+    select.append(todas);
+    for (const c of CATEGORIAS) {
+        const op = elemento('option', null, c);
+        op.value = c;
+        select.append(op);
+    }
+}
+
+function trocarLista(nome) {
+    listaAtual = nome;
+    paginaAtual = 1;
+    $$('.sub-aba').forEach((b) => b.classList.toggle('ativa', b.dataset.lista === nome));
+    // busca e filtros so existem no acervo
+    $('#filtros-acervo').hidden = nome !== 'acervo';
+    $('#busca-acervo').disabled = nome !== 'acervo';
+    $('#btn-buscar').disabled = nome !== 'acervo';
+    carregarAcervo({ pagina: 1 });
+}
+
+async function carregarAcervo({ pagina } = {}) {
+    if (estadoConexao.fase !== 'aprovado') return;
+    if (typeof pagina === 'number') paginaAtual = pagina;
+    if (carregandoAcervo) return;
+    carregandoAcervo = true;
+
+    const grade = $('#grade-acervo');
+    const vazio = $('#vazio-acervo');
+    vazio.hidden = true;
+    grade.classList.add('carregando');
+
+    try {
+        let r;
+        if (listaAtual === 'favoritos') r = await api.acervo.favoritos(paginaAtual);
+        else if (listaAtual === 'baixados') r = await api.acervo.baixados(paginaAtual);
+        else r = await api.acervo.listar(filtrosAtuais());
+
+        if (!r.ok) {
+            grade.replaceChildren();
+            vazio.hidden = false;
+            vazio.textContent = r.mensagem || 'Não consegui carregar o acervo.';
+            return;
+        }
+
+        const dados = r.dados || {};
+        precoDaGema = Number(dados.preco_da_gema) || precoDaGema;
+        paginaAtual = Number(dados.pagina) || paginaAtual;
+        totalPaginas = Number(dados.paginas) || 1;
+
+        const titulos =
+            listaAtual === 'baixados'
+                ? (dados.registros || []).map(registroComoCard)
+                : dados.titulos || [];
+
+        renderGradeAcervo(titulos, dados);
+    } finally {
+        carregandoAcervo = false;
+        grade.classList.remove('carregando');
+    }
+}
+
+/** Um registro do historico vira um card com a data e a contagem por cima. */
+function registroComoCard(registro) {
+    const card = Object.assign({}, registro.titulo || {});
+    card.baixadoEm = registro.baixado_em;
+    card.vezes = registro.vezes;
+    card.opcaoBaixada = registro.opcao || null;
+    return card;
+}
+
+function renderGradeAcervo(titulos, dados) {
+    const grade = $('#grade-acervo');
+    grade.replaceChildren();
+
+    for (const t of titulos) grade.append(cartaoDeAcervo(t));
+
+    const vazio = $('#vazio-acervo');
+    vazio.hidden = titulos.length > 0;
+    vazio.textContent =
+        listaAtual === 'favoritos'
+            ? 'Você ainda não marcou nenhum título com a estrela.'
+            : listaAtual === 'baixados'
+              ? 'Nada baixado por esta conta ainda.'
+              : 'Nada encontrado com esses filtros.';
+
+    // titulos que a busca achou e que ainda nao tem arquivo
+    const semArquivo = (dados && dados.sem_arquivo) || [];
+    $('#bloco-sem-arquivo').hidden = semArquivo.length === 0;
+    const gradeSem = $('#grade-sem-arquivo');
+    gradeSem.replaceChildren();
+    for (const t of semArquivo) gradeSem.append(cartaoDeAcervo(t, { semDownload: true }));
+
+    const paginacao = $('#paginacao-acervo');
+    paginacao.hidden = totalPaginas <= 1;
+    $('#rotulo-pagina').textContent = `página ${paginaAtual} de ${totalPaginas}`;
+    $('#btn-pagina-anterior').disabled = paginaAtual <= 1;
+    $('#btn-pagina-proxima').disabled = paginaAtual >= totalPaginas;
+}
+
+/**
+ * A capa vem por um esquema proprio: acervo://capa/<item>. O renderer nunca
+ * monta URL de bucket nem ve o token -- quem busca a imagem e o processo
+ * principal, que tem os cabecalhos.
+ */
+function capaDoTitulo(t) {
+    if (!t.capa || !t.item_referencia) return null;
+    return `acervo://capa/${encodeURIComponent(t.item_referencia)}`;
+}
+
+function cartaoDeAcervo(t, { semDownload = false } = {}) {
+    const cartao = elemento('div', 'cartao acervo-cartao');
+
+    const topo = elemento('div', 'cartao-topo');
+    topo.append(caixaDeCapa(capaDoTitulo(t), t.serie ? '📺' : '🎬'));
+
+    const info = elemento('div', 'cartao-info');
+    const h3 = elemento('h3', null, t.titulo || '(sem título)');
+    info.append(h3);
+    if (t.titulo_alternativo) info.append(elemento('div', 'alternativo', t.titulo_alternativo));
+
+    const partes = [];
+    if (t.ano) partes.push(String(t.ano));
+    if (t.categoria) partes.push(t.categoria);
+    if (t.melhor_resolucao) partes.push(t.melhor_resolucao);
+    if (t.faixa_de_tamanho) partes.push(t.faixa_de_tamanho);
+    if (t.nota_imdb) partes.push(`★ ${t.nota_imdb}`);
+    info.append(elemento('div', 'meta', partes.join(' · ')));
+
+    if (t.baixadoEm) {
+        const quando = new Date(t.baixadoEm);
+        const texto = isNaN(quando)
+            ? ''
+            : `baixado em ${quando.toLocaleDateString('pt-BR')}${t.vezes > 1 ? ` · ${t.vezes}×` : ''}`;
+        if (texto) info.append(elemento('div', 'meta', texto));
+    }
+
+    if (t.tags && t.tags.length) {
+        const chips = elemento('div', 'chips');
+        for (const tag of t.tags) chips.append(elemento('span', 'chip', tag));
+        info.append(chips);
+    }
+
+    topo.append(info);
+    cartao.append(topo);
+
+    const rodape = elemento('div', 'rodape');
+    if (semDownload || t.nada_para_baixar) {
+        rodape.append(elemento('span', 'sem-arquivo-aviso', 'ainda sem arquivo'));
+    } else {
+        const opcoes = elemento(
+            'button',
+            'botao',
+            t.total_opcoes > 1 ? `Ver ${t.total_opcoes} opções` : 'Ver e baixar'
+        );
+        opcoes.addEventListener('click', () => abrirFicha(t.chave));
+        rodape.append(opcoes);
+
+        const estrela = elemento('button', 'botao secundario', '☆');
+        estrela.title = 'Favoritar';
+        estrela.addEventListener('click', () => favoritar(t.chave, t.item_referencia, estrela));
+        rodape.append(estrela);
+    }
+    cartao.append(rodape);
+
+    return cartao;
+}
+
+async function favoritar(chave, item, botao) {
+    if (!chave || !item) return;
+    botao.disabled = true;
+    try {
+        const r = await api.acervo.favoritar(chave, item);
+        if (!r.ok) {
+            aviso(r.mensagem, 'erro');
+            return;
+        }
+        const ligado = !!(r.dados && r.dados.ligado);
+        botao.textContent = ligado ? '★' : '☆';
+        botao.title = ligado ? 'Tirar dos favoritos' : 'Favoritar';
+        if (listaAtual === 'favoritos' && !ligado) carregarAcervo();
+    } finally {
+        botao.disabled = false;
+    }
+}
+
+// ----------------------------------------------------------- ficha do titulo
+
+let fichaAtual = null;
+
+async function abrirFicha(chave) {
+    const r = await api.acervo.titulo(chave);
+    if (!r.ok) {
+        aviso(r.mensagem, 'erro');
+        return;
+    }
+    const dados = r.dados || {};
+    precoDaGema = Number(dados.preco_da_gema) || precoDaGema;
+    fichaAtual = dados.titulo || null;
+    if (!fichaAtual) {
+        aviso('Esse título não existe mais para esta conta.', 'erro');
+        return;
+    }
+    renderFicha(fichaAtual);
+    $('#ficha').hidden = false;
+}
+
+function fecharFicha() {
+    $('#ficha').hidden = true;
+    fichaAtual = null;
+}
+
+function renderFicha(t) {
+    $('#ficha-titulo').textContent = t.titulo || '(sem título)';
+
+    const previa = $('#ficha-previa');
+    previa.replaceChildren();
+    const url = capaDoTitulo(t);
+    if (url) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        img.addEventListener('error', () => {
+            img.remove();
+            previa.textContent = 'sem capa';
+        });
+        previa.append(img);
+    } else {
+        previa.textContent = 'sem capa';
+    }
+
+    const estrela = $('#btn-ficha-favorito');
+    estrela.textContent = '☆ Favoritar';
+    estrela.onclick = () => favoritarDaFicha(t, estrela);
+
+    const meta = $('#ficha-meta');
+    meta.replaceChildren();
+    const partes = [];
+    if (t.titulo_alternativo) partes.push(t.titulo_alternativo);
+    if (t.ano) partes.push(String(t.ano));
+    if (t.categoria) partes.push(t.categoria);
+    if (t.nota_imdb) partes.push(`★ ${t.nota_imdb}`);
+    meta.append(elemento('div', 'meta', partes.join(' · ')));
+    if (t.tags && t.tags.length) {
+        const chips = elemento('div', 'chips');
+        for (const tag of t.tags) chips.append(elemento('span', 'chip', tag));
+        meta.append(chips);
+    }
+
+    // A ficha tecnica e um objeto rotulo -> valor ja formatado: as chaves
+    // variam por item e podem mudar sem aviso. Listamos como veio.
+    const tabela = $('#ficha-tecnica');
+    tabela.replaceChildren();
+    for (const [rotulo, valor] of Object.entries(t.ficha_tecnica || {})) {
+        const linha = document.createElement('tr');
+        linha.append(elemento('th', null, rotulo));
+        linha.append(elemento('td', null, String(valor)));
+        tabela.append(linha);
+    }
+    tabela.hidden = tabela.childElementCount === 0;
+
+    const lista = $('#ficha-opcoes');
+    lista.replaceChildren();
+    for (const opcao of t.opcoes || []) lista.append(linhaDeOpcao(opcao));
+    if (!(t.opcoes || []).length) {
+        lista.append(elemento('p', 'vazio-inline', 'Este título ainda não tem arquivo para baixar.'));
+    }
+
+    const faltantes = $('#ficha-faltantes');
+    faltantes.replaceChildren();
+    const semArquivo = t.faltantes || [];
+    faltantes.hidden = semArquivo.length === 0;
+    if (semArquivo.length) {
+        faltantes.append(elemento('h3', null, 'Ainda não chegaram'));
+        for (const f of semArquivo) {
+            faltantes.append(elemento('div', 'faltante', f.rotulo || f.nome || String(f.id ?? '')));
+        }
+    }
+}
+
+async function favoritarDaFicha(t, botao) {
+    await favoritar(t.chave, t.item_referencia || (t.opcoes && t.opcoes[0] && t.opcoes[0].id), botao);
+    const ligado = botao.textContent === '★';
+    botao.textContent = ligado ? '★ Nos favoritos' : '☆ Favoritar';
+}
+
+function linhaDeOpcao(opcao) {
+    const linha = elemento('div', 'opcao');
+
+    const esquerda = elemento('div', 'opcao-info');
+    esquerda.append(elemento('div', 'opcao-rotulo', opcao.rotulo || `Opção ${opcao.id}`));
+
+    const etiquetas = elemento('div', 'chips');
+    for (const e of opcao.etiquetas || []) etiquetas.append(elemento('span', 'chip', e));
+    if (opcao.temporada) etiquetas.append(elemento('span', 'chip', `T${opcao.temporada}`));
+    if (opcao.episodio) etiquetas.append(elemento('span', 'chip', `E${opcao.episodio}`));
+    esquerda.append(etiquetas);
+
+    const detalhes = [];
+    if (opcao.tamanho) detalhes.push(opcao.tamanho);
+    if (typeof opcao.seeders === 'number') detalhes.push(`${opcao.seeders} seeds`);
+    esquerda.append(elemento('div', 'meta', detalhes.join(' · ')));
+    linha.append(esquerda);
+
+    const direita = elemento('div', 'opcao-acoes');
+    const preco = elemento(
+        'span',
+        `preco${opcao.free ? ' free' : ''}`,
+        opcao.free ? 'free' : `◆ ${opcao.preco}`
+    );
+    direita.append(preco);
+
+    const baixar = elemento('button', 'botao', 'Baixar');
+    baixar.addEventListener('click', () => baixarOpcao(opcao, baixar));
+    direita.append(baixar);
+
+    linha.append(direita);
+    return linha;
+}
+
+/**
+ * Baixar uma opcao.
+ *
+ * O GET nunca debita: se for free, o arquivo vem na hora. Se custar gema, a
+ * API devolve preco e saldo e NADA foi cobrado -- mostramos a confirmacao e so
+ * entao chamamos o POST, que e o unico que cobra.
+ */
+async function baixarOpcao(opcao, botao) {
+    const rotulo = botao.textContent;
+    botao.disabled = true;
+    botao.textContent = 'Pedindo…';
+    try {
+        const r = await api.acervo.baixar(opcao.id);
+        if (!r.ok) {
+            aviso(mensagemDeDownload(r), 'erro');
+            return;
+        }
+        if (!r.confirmacao) {
+            fecharFicha();
+            trocarAba('fila');
+            return;
+        }
+
+        const aceitou = await pedirConfirmacao(r.confirmacao, opcao);
+        if (!aceitou) return;
+
+        botao.textContent = 'Baixando…';
+        const c = await api.acervo.confirmar(opcao.id, r.confirmacao.preco);
+        if (!c.ok) {
+            // O preco virou entre a confirmacao e o POST: nada foi debitado e a
+            // resposta ja traz o valor de agora -- da para reperguntar.
+            if (c.erro === 'preco_mudou' && c.dados && c.dados.preco) {
+                const denovo = await pedirConfirmacao(
+                    { preco: Number(c.dados.preco), saldo: Number(c.dados.saldo) || 0 },
+                    opcao,
+                    'O preço mudou enquanto você decidia. Nada foi cobrado.'
+                );
+                if (!denovo) return;
+                const terceira = await api.acervo.confirmar(opcao.id, Number(c.dados.preco));
+                if (!terceira.ok) {
+                    aviso(mensagemDeDownload(terceira), 'erro');
+                    return;
+                }
+                fecharFicha();
+                trocarAba('fila');
+                return;
+            }
+            aviso(mensagemDeDownload(c), 'erro');
+            return;
+        }
+        fecharFicha();
+        trocarAba('fila');
+    } finally {
+        botao.disabled = false;
+        botao.textContent = rotulo;
+    }
+}
+
+const MENSAGENS_DE_DOWNLOAD = {
+    sem_passkey:
+        'Esta conta não tem passkey, então nenhum download sai — nem o free. Só o administrador do site resolve.',
+    arquivo_indisponivel:
+        'O arquivo não abriu no armazenamento do site. Tente mais tarde — nada foi cobrado.',
+    sem_saldo: 'Gemas insuficientes para esta opção.',
+    opcao_free: 'Esta opção não cobra nada — tente baixar de novo.',
+    nao_encontrado: 'Essa opção não existe mais para esta conta.',
+};
+
+function mensagemDeDownload(r) {
+    return MENSAGENS_DE_DOWNLOAD[r.erro] || r.mensagem || 'Não consegui baixar.';
+}
+
+let resolverConfirmacao = null;
+
+function pedirConfirmacao({ preco, saldo }, opcao, aviso_ = '') {
+    $('#confirmacao-texto').textContent =
+        `${aviso_ ? aviso_ + ' ' : ''}"${opcao.rotulo || 'Esta opção'}" custa gemas. ` +
+        'Confirme para baixar.';
+    $('#confirmacao-preco').textContent = `◆ ${preco}`;
+    $('#confirmacao-saldo').textContent = `◆ ${saldo}`;
+    $('#confirmacao-resto').textContent = `◆ ${Math.max(0, saldo - preco)}`;
+    $('#btn-confirmacao-ok').disabled = saldo < preco;
+    $('#btn-confirmacao-ok').textContent = saldo < preco ? 'Saldo insuficiente' : 'Baixar e gastar';
+    $('#confirmacao').hidden = false;
+
+    return new Promise((resolve) => {
+        resolverConfirmacao = resolve;
+    });
+}
+
+function fecharConfirmacao(resposta) {
+    $('#confirmacao').hidden = true;
+    if (resolverConfirmacao) {
+        const r = resolverConfirmacao;
+        resolverConfirmacao = null;
+        r(resposta);
+    }
+}
+
+// -------------------------------------------------------------- estado do qbit
 
 let estadoQbit = { fase: 'iniciando', motivo: '', pendentes: 0 };
 
@@ -259,7 +876,7 @@ function renderFila(forcar) {
 
 /**
  * Caixa de entrada da aba Downloads: aceita link magnet e tambem endereco web
- * -- tanto o link direto do .torrent quanto a pagina do item no Torrange.
+ * -- tanto o link direto do .torrent quanto uma pagina que o contenha.
  */
 async function adicionarDaCaixa() {
     const campo = $('#campo-magnet');
@@ -757,7 +1374,7 @@ async function reproduzir(entrada, arquivo) {
         trocarAba('player');
         mensagemVideo(null);
         if (!r.embutido) {
-            aviso('Sessão Wayland detectada: o vídeo abriu em janela separada.', 'info');
+            aviso('O vídeo abriu em janela separada — os controles daqui continuam valendo.', 'info');
         }
         setTimeout(atualizarFaixas, 1200);
     } catch (erro) {
@@ -944,8 +1561,9 @@ async function carregarConfig() {
     configuracao = await api.config.ler();
     $('#cfg-pasta').value = configuracao.pastaDownloads;
     $('#cfg-site').value = configuracao.siteUrl;
+    $('#cfg-api').value = configuracao.apiUrl;
+    $('#cfg-nome-aparelho').value = configuracao.nomeDoAparelho || '';
     $('#cfg-sequencial').checked = !!configuracao.downloadSequencial;
-    $('#cfg-renomear').checked = !!configuracao.renomearBotaoBaixar;
     $('#cfg-janela-separada').checked = !!configuracao.videoEmJanelaSeparada;
     $('#cfg-limite-down').value = configuracao.limiteDownload || 0;
     $('#cfg-limite-up').value = configuracao.limiteUpload || 0;
@@ -957,6 +1575,7 @@ async function carregarConfig() {
     $('#sobre').textContent =
         `Torrange ${info.versao} · Electron ${info.electron} · ${info.plataforma}` +
         `${info.empacotado ? '' : ' (desenvolvimento)'}\n` +
+        `API do aplicativo: ${info.api}\n` +
         `qBittorrent embutido: ${info.qbit}\n` +
         `  ${info.binarios.qbit}\n` +
         `Player: ${info.videoAcoplado ? 'acoplado à janela' : 'janela separada'}\n` +
@@ -982,8 +1601,9 @@ async function salvarConfig() {
     try {
         const novo = await api.config.gravar({
             siteUrl: $('#cfg-site').value.trim() || configuracao.siteUrl,
+            apiUrl: $('#cfg-api').value.trim() || configuracao.apiUrl,
+            nomeDoAparelho: $('#cfg-nome-aparelho').value.trim(),
             downloadSequencial: $('#cfg-sequencial').checked,
-            renomearBotaoBaixar: $('#cfg-renomear').checked,
             videoEmJanelaSeparada: $('#cfg-janela-separada').checked,
             limiteDownload: Number($('#cfg-limite-down').value) || 0,
             limiteUpload: Number($('#cfg-limite-up').value) || 0,
@@ -1102,12 +1722,51 @@ function ligarEventos() {
     $$('.aba').forEach((b) => b.addEventListener('click', () => trocarAba(b.dataset.aba)));
     $('#pilula-player').addEventListener('click', () => trocarAba('player'));
 
-    // navegacao do site
-    $('#btn-voltar').addEventListener('click', () => api.site.navegar('voltar'));
-    $('#btn-avancar').addEventListener('click', () => api.site.navegar('avancar'));
-    $('#btn-recarregar').addEventListener('click', () => api.site.navegar('recarregar'));
+    // ------------------------------------------------------------ conexao
+    $('#campo-token').addEventListener('input', atualizarContagemToken);
+    $('#campo-token').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) salvarToken();
+    });
+    $('#btn-salvar-token').addEventListener('click', salvarToken);
+    for (const id of ['#btn-abrir-aplicativos', '#btn-abrir-aplicativos-2', '#btn-abrir-aplicativos-3', '#btn-cfg-abrir-site']) {
+        $(id).addEventListener('click', () => api.conexao.abrirSite());
+    }
+    $('#btn-verificar').addEventListener('click', (e) => verificarConexao(e.target));
+    $('#btn-verificar-2').addEventListener('click', (e) => verificarConexao(e.target));
+    $('#btn-cfg-verificar').addEventListener('click', (e) => verificarConexao(e.target));
+    $('#btn-trocar-token').addEventListener('click', esquecerToken);
+    $('#btn-trocar-token-2').addEventListener('click', esquecerToken);
+    $('#btn-cfg-esquecer').addEventListener('click', esquecerToken);
 
-    // fila
+    // ------------------------------------------------------------- acervo
+    $$('.sub-aba').forEach((b) => b.addEventListener('click', () => trocarLista(b.dataset.lista)));
+    $('#btn-buscar').addEventListener('click', () => carregarAcervo({ pagina: 1 }));
+    $('#busca-acervo').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') carregarAcervo({ pagina: 1 });
+    });
+    for (const id of ['#filtro-categoria', '#filtro-res', '#filtro-decada', '#filtro-ordem', '#filtro-por', '#filtro-free']) {
+        $(id).addEventListener('change', () => carregarAcervo({ pagina: 1 }));
+    }
+    $('#btn-limpar-filtros').addEventListener('click', () => {
+        $('#busca-acervo').value = '';
+        $('#filtro-categoria').value = '';
+        $('#filtro-res').value = '';
+        $('#filtro-decada').value = '';
+        $('#filtro-ordem').value = 'chegada';
+        $('#filtro-por').value = '20';
+        $('#filtro-free').checked = false;
+        carregarAcervo({ pagina: 1 });
+    });
+    $('#btn-pagina-anterior').addEventListener('click', () => carregarAcervo({ pagina: paginaAtual - 1 }));
+    $('#btn-pagina-proxima').addEventListener('click', () => carregarAcervo({ pagina: paginaAtual + 1 }));
+
+    $('#btn-ficha-fechar').addEventListener('click', fecharFicha);
+    $('#ficha-fundo').addEventListener('click', fecharFicha);
+    $('#btn-confirmacao-cancelar').addEventListener('click', () => fecharConfirmacao(false));
+    $('#confirmacao-fundo').addEventListener('click', () => fecharConfirmacao(false));
+    $('#btn-confirmacao-ok').addEventListener('click', () => fecharConfirmacao(true));
+
+    // --------------------------------------------------------------- fila
     $('#btn-magnet').addEventListener('click', adicionarDaCaixa);
     $('#campo-magnet').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') adicionarDaCaixa();
@@ -1179,11 +1838,6 @@ function ligarEventos() {
         await navigator.clipboard.writeText($('#saida-diagnostico').textContent);
         aviso('Diagnóstico copiado.', 'ok');
     });
-    $('#btn-sair-site').addEventListener('click', async () => {
-        await api.site.sair();
-        aviso('Sessão do site encerrada.', 'ok');
-        trocarAba('site');
-    });
 
     // player
     $('#btn-play').addEventListener('click', () => cmd('cycle', 'pause'));
@@ -1236,12 +1890,16 @@ function ligarEventos() {
 
     // teclado
     document.addEventListener('keydown', (evento) => {
-        if (!$('#modal').hidden) {
+        // Com qualquer painel aberto, nenhum atalho do player responde.
+        const painelAberto = ['#modal', '#ficha', '#confirmacao'].find((id) => !$(id).hidden);
+        if (painelAberto) {
             if (evento.key === 'Escape') {
                 evento.preventDefault();
-                fecharModal();
+                if (painelAberto === '#modal') fecharModal();
+                else if (painelAberto === '#ficha') fecharFicha();
+                else fecharConfirmacao(false);
             }
-            return; // com o painel aberto, nenhum atalho do player responde
+            return;
         }
         if (/^(INPUT|SELECT|TEXTAREA)$/.test(evento.target.tagName)) return;
         if (abaAtual !== 'player') return;
@@ -1277,18 +1935,13 @@ function ligarEventos() {
         }, 2500);
     });
 
-    // layout das views nativas
+    // layout da view nativa do video
     window.addEventListener('resize', enviarLayout);
     const observador = new ResizeObserver(enviarLayout);
-    observador.observe($('#area-site'));
     observador.observe($('#area-video'));
 
     // eventos vindos do processo principal
-    api.ao('site:navegou', (d) => {
-        $('#url-site').textContent = d.titulo || d.url;
-        $('#btn-voltar').disabled = !d.voltar;
-        $('#btn-avancar').disabled = !d.avancar;
-    });
+    api.ao('conexao:estado', aplicarEstadoConexao);
     api.ao('fila:atualizou', (lista) => {
         fila = lista || [];
         renderFila();
@@ -1323,9 +1976,15 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 
 (async function iniciar() {
+    preencherCategorias();
     ligarEventos();
     await carregarConfig();
-    trocarAba('site');
+    trocarAba('acervo');
+
+    estadoConexao = (await api.conexao.estado()) || estadoConexao;
+    renderConexao();
+    if (estadoConexao.fase === 'aprovado') carregarAcervo({ pagina: 1 });
+
     fila = (await api.fila.listar()) || [];
     biblioteca = (await api.biblioteca.listar()) || [];
     await carregarPastas();

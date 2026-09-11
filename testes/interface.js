@@ -28,11 +28,14 @@ function checar(descricao, condicao, detalhe) {
 }
 
 const ABAS = [
-    ['site', 'tela-site'],
+    ['acervo', 'tela-acervo'],
     ['fila', 'tela-fila'],
     ['biblioteca', 'tela-biblioteca'],
     ['config', 'tela-config'],
 ];
+
+/** Todo painel que cobre a tela inteira. Nenhum pode ficar aberto sozinho. */
+const PAINEIS = ['modal', 'ficha', 'confirmacao'];
 
 (async () => {
     console.log('== Teste de navegacao da interface ==\n');
@@ -46,6 +49,7 @@ const ABAS = [
     const perfil = fs.mkdtempSync(path.join(os.tmpdir(), 'torrange-teste-'));
     fs.writeFileSync(path.join(perfil, 'config.json'), JSON.stringify({
         siteUrl: `http://127.0.0.1:${PORTA_SITE}/`,
+        apiUrl: `http://127.0.0.1:${PORTA_SITE}/api/aplicativo`,
         pastaDownloads: path.join(perfil, 'downloads'),
     }, null, 2));
 
@@ -95,7 +99,7 @@ const ABAS = [
                     ativa: ativa && ativa.id,
                     alvo: el ? (el.id || el.className || el.tagName) : null,
                     dentroDaTela: !!(el && ativa && ativa.contains(el)),
-                    cobertoPorModal: !!(el && el.closest('#modal')),
+                    cobertoPorModal: !!(el && el.closest('#modal, #ficha, #confirmacao')),
                 };
             })()`);
 
@@ -106,24 +110,26 @@ const ABAS = [
             await espera(150);
         }
 
-        // ------------------------------------------ o painel abre e fecha mesmo
-        const comPainel = await ui.avaliar(`(() => {
-            const m = document.getElementById('modal');
-            m.hidden = false;
-            const el = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
-            return { display: getComputedStyle(m).display, pegaOClique: !!(el && el.closest('#modal')) };
-        })()`);
-        checar('o painel de edicao aparece quando aberto',
-            comPainel.display !== 'none' && comPainel.pegaOClique, JSON.stringify(comPainel));
+        // ------------------------------------------ cada painel abre e fecha mesmo
+        for (const painel of PAINEIS) {
+            const comPainel = await ui.avaliar(`(() => {
+                const m = document.getElementById('${painel}');
+                m.hidden = false;
+                const el = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+                return { display: getComputedStyle(m).display, pegaOClique: !!(el && el.closest('#${painel}')) };
+            })()`);
+            checar(`o painel "${painel}" aparece quando aberto`,
+                comPainel.display !== 'none' && comPainel.pegaOClique, JSON.stringify(comPainel));
 
-        const semPainel = await ui.avaliar(`(() => {
-            const m = document.getElementById('modal');
-            m.hidden = true;
-            const el = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
-            return { display: getComputedStyle(m).display, pegaOClique: !!(el && el.closest('#modal')) };
-        })()`);
-        checar('o painel some quando fechado',
-            semPainel.display === 'none' && !semPainel.pegaOClique, JSON.stringify(semPainel));
+            const semPainel = await ui.avaliar(`(() => {
+                const m = document.getElementById('${painel}');
+                m.hidden = true;
+                const el = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+                return { display: getComputedStyle(m).display, pegaOClique: !!(el && el.closest('#${painel}')) };
+            })()`);
+            checar(`o painel "${painel}" some quando fechado`,
+                semPainel.display === 'none' && !semPainel.pegaOClique, JSON.stringify(semPainel));
+        }
 
         // ------------------------------------------------ os ajustes respondem
         const ajustes = await ui.avaliar(`(() => {
@@ -146,6 +152,24 @@ const ABAS = [
         })()`);
         checar('a Biblioteca mostra a trilha de navegacao', bib.caminho.includes('Biblioteca'), bib.caminho);
         checar('a Biblioteca tem o botao de nova pasta', bib.temBotaoNovaPasta);
+
+        // ------------------------------------------- a porta de entrada do token
+        const porta = await ui.avaliar(`(() => {
+            document.querySelector('.aba[data-aba="acervo"]').click();
+            const token = document.getElementById('painel-token');
+            const campo = document.getElementById('campo-token');
+            const r = campo.getBoundingClientRect();
+            const noCampo = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return {
+                tokenVisivel: !token.hidden,
+                acervoEscondido: document.getElementById('acervo-conteudo').hidden,
+                campoClicavel: noCampo === campo,
+                temBotao: !!document.getElementById('btn-salvar-token'),
+            };
+        })()`);
+        checar('sem token, a aba Acervo mostra a tela para colar o token',
+            porta.tokenVisivel && porta.acervoEscondido && porta.temBotao, JSON.stringify(porta));
+        checar('o campo do token recebe o clique', porta.campoClicavel, JSON.stringify(porta));
 
         checar('a interface rodou sem erro de console', errosDeConsole.length === 0,
             errosDeConsole.join('\n         '));

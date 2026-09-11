@@ -81,21 +81,31 @@ button, input, select { font: inherit; color: inherit; }
     border-radius: 999px;
 }
 
-.nav-site {
+.conta {
     display: flex;
     align-items: center;
-    gap: 6px;
-    flex: 1;
+    gap: 10px;
+    margin-left: auto;
     min-width: 0;
 }
 
-.nav-site .url {
+.conta .gemas {
+    background: rgba(255, 138, 61, 0.14);
+    color: var(--destaque);
+    font-weight: 650;
+    font-size: 12.5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.conta .conta-nome {
     color: var(--texto-2);
-    font-size: 12px;
+    font-size: 12.5px;
+    max-width: 220px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding-left: 6px;
 }
 
 .icone {
@@ -142,9 +152,8 @@ button, input, select { font: inherit; color: inherit; }
 
 .tela.ativa { display: flex; }
 
-#tela-fila, #tela-biblioteca, #tela-config { overflow-y: auto; padding: 24px 28px 40px; }
+#tela-acervo, #tela-fila, #tela-biblioteca, #tela-config { overflow-y: auto; padding: 24px 28px 40px; }
 
-#area-site { flex: 1; }
 
 .cabecalho-tela {
     display: flex;
@@ -707,3 +716,235 @@ body.tela-cheia.ocioso .controles { opacity: 0; pointer-events: none; transition
 .modal-rodape .espaco { flex: 1; }
 .botao.perigo { color: var(--erro); }
 .botao.perigo:hover { background: rgba(255, 95, 95, 0.12); }
+
+
+/* =========================================================== conexao/token */
+
+/*
+ * A porta de entrada do app. Nao ha tela de login: ou o aparelho tem token e
+ * autorizacao, ou aparece uma destas tres caixas no lugar do acervo.
+ */
+.gate {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 28px 0 60px;
+}
+
+.gate-caixa {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    max-width: 620px;
+    background: var(--fundo-2);
+    border: 1px solid var(--borda);
+    border-radius: 14px;
+    padding: 28px 30px 26px;
+}
+
+.gate-caixa h1 { margin: 0; font-size: 21px; font-weight: 650; }
+.gate-texto { margin: 0; color: var(--texto-2); }
+
+.gate-passos {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--texto-2);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    font-size: 13.5px;
+}
+.gate-passos b { color: var(--texto); font-weight: 600; }
+
+.gate-caixa textarea {
+    width: 100%;
+    resize: vertical;
+    background: var(--fundo);
+    border: 1px solid var(--borda);
+    border-radius: 9px;
+    padding: 10px 12px;
+    color: var(--texto);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    word-break: break-all;
+    user-select: text;
+}
+.gate-caixa textarea:focus { border-color: var(--destaque); outline: none; }
+
+.contagem { color: var(--texto-2); font-size: 11.5px; }
+.contagem.ok { color: var(--ok); }
+
+.gate-erro {
+    margin: 0;
+    color: var(--erro);
+    font-size: 13px;
+    background: rgba(255, 95, 95, 0.1);
+    border-left: 3px solid var(--erro);
+    padding: 8px 12px;
+    border-radius: 0 8px 8px 0;
+}
+
+.gate-caixa .dica { margin: 0; color: var(--texto-2); font-size: 12px; }
+
+.ligacao {
+    align-self: flex-start;
+    background: none;
+    border: 0;
+    color: var(--texto-2);
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+    font-size: 12.5px;
+}
+.ligacao:hover { color: var(--texto); }
+
+/* um circulo girando, so para a espera nao parecer travada */
+.girando {
+    width: 22px;
+    height: 22px;
+    border: 2.5px solid var(--borda);
+    border-top-color: var(--destaque);
+    border-radius: 50%;
+    animation: girar 0.9s linear infinite;
+}
+
+@keyframes girar { to { transform: rotate(360deg); } }
+
+.ficha-aparelho {
+    display: grid;
+    gap: 2px;
+    background: var(--fundo);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+}
+.ficha-aparelho > div { display: flex; gap: 10px; justify-content: space-between; padding: 3px 0; }
+.ficha-aparelho span { color: var(--texto-2); flex-shrink: 0; }
+.ficha-aparelho b {
+    font-weight: 600;
+    text-align: right;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+.ficha-aparelho .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
+
+/* ================================================================= acervo */
+
+.acervo { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+
+.sub-abas { display: flex; gap: 4px; }
+
+.sub-aba {
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 7px 13px;
+    border-radius: 999px;
+    color: var(--texto-2);
+    cursor: pointer;
+    font-size: 13px;
+}
+.sub-aba:hover { color: var(--texto); background: var(--fundo-3); }
+.sub-aba.ativa { color: var(--texto); background: var(--fundo-3); border-color: var(--borda); }
+
+#busca-acervo { min-width: 280px; flex: 1 1 280px; }
+
+.filtros {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    background: var(--fundo-2);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 12px 14px;
+}
+.filtros > label { display: flex; flex-direction: column; gap: 4px; }
+.filtros > label > span { color: var(--texto-2); font-size: 11.5px; }
+.filtros select { min-width: 130px; }
+.campo-switch.compacto { align-items: center; font-size: 13px; }
+.campo-switch.compacto input { margin-top: 0; }
+
+.grade.carregando { opacity: 0.45; transition: opacity 0.15s; }
+.grade.compacta { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+
+.acervo-cartao .alternativo { color: var(--texto-2); font-size: 12px; font-style: italic; }
+.acervo-cartao .rodape .botao { padding: 7px 12px; font-size: 13px; }
+
+.sem-arquivo-aviso { color: var(--texto-2); font-size: 12.5px; }
+
+.sem-arquivo { display: flex; flex-direction: column; gap: 10px; }
+.sem-arquivo h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--texto-2); }
+
+.paginacao { display: flex; gap: 12px; align-items: center; justify-content: center; padding: 6px 0 10px; }
+.paginacao span { color: var(--texto-2); font-size: 13px; }
+
+/* ---------------------------------------------------- ficha de um titulo */
+
+.modal-caixa.larga { width: min(920px, 94vw); }
+.modal-caixa.estreita { width: min(460px, 94vw); }
+.modal-corpo.coluna { flex-direction: column; gap: 14px; }
+
+.ficha-capa { display: flex; flex-direction: column; gap: 8px; width: 190px; flex-shrink: 0; }
+.ficha-capa .previa {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    background: var(--fundo);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    color: var(--texto-2);
+    font-size: 12px;
+    overflow: hidden;
+}
+.ficha-capa .previa img { width: 100%; height: 100%; object-fit: cover; }
+
+.ficha-meta { display: flex; flex-direction: column; gap: 8px; }
+.modal-campos h3 { margin: 6px 0 0; font-size: 14px; font-weight: 620; }
+
+.ficha-tecnica { border-collapse: collapse; width: 100%; font-size: 13px; }
+.ficha-tecnica th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--texto-2);
+    padding: 4px 14px 4px 0;
+    white-space: nowrap;
+    vertical-align: top;
+    width: 1%;
+}
+.ficha-tecnica td { padding: 4px 0; user-select: text; }
+
+.opcoes { display: flex; flex-direction: column; gap: 8px; }
+
+.opcao {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    background: var(--fundo);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 11px 14px;
+}
+.opcao-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.opcao-rotulo { font-weight: 650; }
+.opcao-info .meta { color: var(--texto-2); font-size: 12px; }
+.opcao-acoes { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+.preco {
+    font-weight: 650;
+    font-size: 13px;
+    color: var(--destaque);
+    white-space: nowrap;
+}
+.preco.free { color: var(--ok); }
+
+.vazio-inline { color: var(--texto-2); margin: 0; font-size: 13px; }
+
+.faltantes { display: flex; flex-direction: column; gap: 6px; }
+.faltantes h3 { margin: 0; }
+.faltante { color: var(--texto-2); font-size: 12.5px; }

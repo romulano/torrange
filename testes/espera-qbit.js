@@ -16,7 +16,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { Alvo, acharAlvo, encerrarApp, espera, RAIZ } = require('./cdp');
+const { Alvo, acharAlvo, encerrarApp, espera, pegarJson, RAIZ } = require('./cdp');
+const http = require('http');
 
 const PORTA_SITE = 47112;
 const PORTA_CDP = 9335;
@@ -48,31 +49,65 @@ function subirApp(perfil, qbitFalso) {
     );
 }
 
-function prepararPerfil() {
+/**
+ * O perfil ja nasce conectado: o que este teste mede e a espera pelo
+ * qBittorrent, nao a da autorizacao. O formato "claro:" e o mesmo que o app
+ * usa quando a maquina nao tem cofre de credenciais.
+ */
+function prepararPerfil(token) {
     const perfil = fs.mkdtempSync(path.join(os.tmpdir(), 'torrange-espera-'));
     fs.writeFileSync(
         path.join(perfil, 'config.json'),
         JSON.stringify(
             {
                 siteUrl: `http://127.0.0.1:${PORTA_SITE}/`,
+                apiUrl: `http://127.0.0.1:${PORTA_SITE}/api/aplicativo`,
                 pastaDownloads: path.join(perfil, 'downloads'),
             },
             null,
             2
         )
     );
+    fs.writeFileSync(path.join(perfil, 'token.bin'), `claro:${token}`, { mode: 0o600 });
     return perfil;
 }
 
-async function conectar(app) {
-    const alvoSite = await acharAlvo(PORTA_CDP, (a) => a.url.includes(`:${PORTA_SITE}`));
+/** Aprova este aparelho no "site" de teste. */
+function aprovarNoSite() {
+    return new Promise((resolve, reject) => {
+        const req = http.request(
+            { host: '127.0.0.1', port: PORTA_SITE, path: '/_teste/aprovar', method: 'POST' },
+            (res) => {
+                res.resume();
+                res.on('end', resolve);
+            }
+        );
+        req.on('error', reject);
+        req.end();
+    });
+}
+
+/** Espera o app ficar autorizado antes de pedir qualquer download. */
+async function esperarConexao(ui) {
+    for (let i = 0; i < 30; i++) {
+        const estado = await ui.avaliar('window.torrange.conexao.estado()');
+        if (estado && estado.fase === 'aprovado') return true;
+        await espera(500);
+    }
+    return false;
+}
+
+/** Pede o download da opcao free do acervo -- o mesmo caminho do clique na ficha. */
+function pedirDownload(ui) {
+    return ui.avaliar('window.torrange.acervo.baixar(1)');
+}
+
+async function conectar() {
     const alvoUi = await acharAlvo(PORTA_CDP, (a) => a.url.includes('renderer/index.html'));
-    if (!alvoSite || !alvoUi) throw new Error('o app nao abriu as duas views');
-    const siteView = await Alvo.conectar(alvoSite.webSocketDebuggerUrl);
+    if (!alvoUi) throw new Error('a interface do app nao apareceu');
     const ui = await Alvo.conectar(alvoUi.webSocketDebuggerUrl);
-    await siteView.enviar('Runtime.enable');
     await ui.enviar('Runtime.enable');
-    return { siteView, ui };
+    return ui;
 }
 
 // ---------------------------------------------------------------- execucao
@@ -86,6 +121,9 @@ async function conectar(app) {
     );
     await espera(600);
 
+    const { token: TOKEN } = await pegarJson(PORTA_SITE, '/_teste/estado');
+    await aprovarNoSite();
+
     const oficina = fs.mkdtempSync(path.join(os.tmpdir(), 'torrange-oficina-'));
     const { script: qbitLento, real } = criarQbitLento(oficina);
 
@@ -96,14 +134,13 @@ async function conectar(app) {
     }
 
     // ------------------------------------------------ 1. qBittorrent lento
-    let perfil = prepararPerfil();
+    let perfil = prepararPerfil(TOKEN);
     let app = subirApp(perfil, qbitLento);
     let ui = null;
-    let siteView = null;
 
     try {
-        ({ ui, siteView } = await conectar(app));
-        await espera(800);
+        ui = await conectar();
+        checar('o app conecta pelo token já cadastrado', await esperarConexao(ui));
 
         const inicial = await ui.avaliar('window.torrange.qbit.estado()');
         checar(
@@ -112,8 +149,8 @@ async function conectar(app) {
             `fase: ${inicial && inicial.fase}`
         );
 
-        // clica em Baixar bem no meio da subida
-        await siteView.avaliar(`document.querySelectorAll('a.botao-baixar')[0].click(); true`);
+        // pede o download bem no meio da subida do qBittorrent
+        await pedirDownload(ui);
         await espera(1500);
 
         const guardado = await ui.avaliar('window.torrange.qbit.estado()');
@@ -170,20 +207,19 @@ async function conectar(app) {
         falhas++;
     } finally {
         if (ui) ui.fechar();
-        if (siteView) siteView.fechar();
         await encerrarApp(PORTA_CDP, app);
         fs.rmSync(perfil, { recursive: true, force: true });
     }
 
     // -------------------------------------------- 2. qBittorrent quebrado
     console.log('');
-    perfil = prepararPerfil();
+    perfil = prepararPerfil(TOKEN);
     app = subirApp(perfil, path.join(oficina, 'nao-existe-qbittorrent-nox'));
     ui = null;
-    siteView = null;
 
     try {
-        ({ ui, siteView } = await conectar(app));
+        ui = await conectar();
+        await esperarConexao(ui);
 
         let estado = {};
         for (let i = 0; i < 40; i++) {
@@ -197,7 +233,7 @@ async function conectar(app) {
             `${estado.fase}: ${estado.motivo}`
         );
 
-        await siteView.avaliar(`document.querySelectorAll('a.botao-baixar')[0].click(); true`);
+        await pedirDownload(ui);
         await espera(1500);
         const comFalha = await ui.avaliar('window.torrange.qbit.estado()');
         checar(
@@ -248,6 +284,7 @@ async function conectar(app) {
                 'Caminhos',
                 'Binários embutidos',
                 'Configuração',
+                'Conexão com o site',
                 'qBittorrent',
                 'Player (mpv)',
                 'Fila de downloads',
@@ -268,13 +305,16 @@ async function conectar(app) {
                 'o .log não vaza a senha da WebUI do qBittorrent',
                 !/Password_PBKDF2|@ByteArray/.test(texto)
             );
+            checar(
+                'o .log não vaza o token da conta — só a forma mascarada',
+                !texto.includes(TOKEN) && /tokenMascarado/.test(texto)
+            );
         }
     } catch (erro) {
         console.log(`\n[ FALHA] erro na parte do qBittorrent quebrado: ${erro.message}`);
         falhas++;
     } finally {
         if (ui) ui.fechar();
-        if (siteView) siteView.fechar();
         await encerrarApp(PORTA_CDP, app);
         fs.rmSync(perfil, { recursive: true, force: true });
         fs.rmSync(oficina, { recursive: true, force: true });

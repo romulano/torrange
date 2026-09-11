@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: capa:; font-src 'self'">
+          content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: capa: acervo:; font-src 'self'">
     <title>Torrange</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -13,17 +13,15 @@
     <div class="marca">torrange</div>
 
     <nav class="abas">
-        <button class="aba ativa" data-aba="site">Acervo</button>
+        <button class="aba ativa" data-aba="acervo">Acervo</button>
         <button class="aba" data-aba="fila">Downloads<span class="contador" id="contador-fila" hidden>0</span></button>
         <button class="aba" data-aba="biblioteca">Biblioteca</button>
         <button class="aba" data-aba="config">Ajustes</button>
     </nav>
 
-    <div class="nav-site" id="nav-site">
-        <button class="icone" id="btn-voltar" title="Voltar">‹</button>
-        <button class="icone" id="btn-avancar" title="Avançar">›</button>
-        <button class="icone" id="btn-recarregar" title="Recarregar">⟳</button>
-        <span class="url" id="url-site">carregando…</span>
+    <div class="conta" id="conta-barra" hidden>
+        <span class="gemas" id="gemas-barra" title="Gemas disponíveis">◆ 0</span>
+        <span class="conta-nome" id="conta-nome"></span>
     </div>
 
     <button class="pilula" id="pilula-player" hidden>▶ Voltar ao player</button>
@@ -31,9 +29,150 @@
 
 <main id="conteudo">
 
-    <!-- ------------------------------------------------------------ site -->
-    <section class="tela ativa" id="tela-site">
-        <div id="area-site"></div>
+    <!-- ---------------------------------------------------------- acervo -->
+    <section class="tela ativa" id="tela-acervo">
+
+        <!-- ---------------------------------------- porta de entrada: token -->
+        <div class="gate" id="gate-conexao" hidden>
+
+            <!-- colar o token -->
+            <div class="gate-caixa" id="painel-token" hidden>
+                <h1>Conectar este aparelho</h1>
+                <p class="gate-texto">
+                    O Torrange não pede e-mail nem senha. Ele usa um <b>token</b> de 100
+                    caracteres, que é seu e fica só neste computador.
+                </p>
+                <ol class="gate-passos">
+                    <li>Abra <b>torrange.com/aplicativos</b> e copie o token (se ainda não houver um, gere ali mesmo).</li>
+                    <li>Cole o token abaixo.</li>
+                    <li>Volte ao site e clique em <b>Permitir</b> para este aparelho.</li>
+                </ol>
+                <label class="campo">
+                    <span>Token</span>
+                    <textarea id="campo-token" rows="3" spellcheck="false" autocomplete="off"
+                              placeholder="cole aqui os 100 caracteres"></textarea>
+                    <small class="contagem" id="contagem-token">0 de 100 caracteres</small>
+                </label>
+                <p class="gate-erro" id="erro-token" hidden></p>
+                <div class="linha">
+                    <button class="botao" id="btn-salvar-token">Conectar</button>
+                    <button class="botao secundario" id="btn-abrir-aplicativos">Abrir a página de aplicativos</button>
+                </div>
+                <p class="dica">
+                    O token é uma senha: guarde-o como tal. Aqui ele é gravado cifrado pelo
+                    cofre do sistema e nunca aparece em log nem no arquivo de diagnóstico.
+                </p>
+            </div>
+
+            <!-- esperando a autorizacao -->
+            <div class="gate-caixa" id="painel-espera" hidden>
+                <div class="girando" aria-hidden="true"></div>
+                <h1 id="espera-titulo">Esperando a autorização</h1>
+                <p class="gate-texto" id="espera-mensagem">
+                    Este aplicativo já se apresentou à sua conta. Falta você permitir o acesso no site.
+                </p>
+                <div class="ficha-aparelho">
+                    <div><span>Aparelho</span><b id="espera-aparelho">—</b></div>
+                    <div><span>Token</span><b id="espera-token">—</b></div>
+                    <div><span>Vagas livres</span><b id="espera-vagas">—</b></div>
+                </div>
+                <div class="linha">
+                    <button class="botao" id="btn-abrir-aplicativos-2">Abrir o site e permitir</button>
+                    <button class="botao secundario" id="btn-verificar">Já permiti — verificar agora</button>
+                </div>
+                <p class="dica">
+                    A verificação é automática a cada poucos segundos; assim que o acesso for
+                    liberado, o acervo aparece aqui sozinho. Cada conta aceita três aparelhos.
+                </p>
+                <button class="ligacao" id="btn-trocar-token">Usar outro token</button>
+            </div>
+
+            <!-- recusa que o app nao resolve sozinho -->
+            <div class="gate-caixa" id="painel-erro-conexao" hidden>
+                <h1 id="erro-conexao-titulo">Não consegui conectar</h1>
+                <p class="gate-texto" id="erro-conexao-texto"></p>
+                <div class="linha">
+                    <button class="botao" id="btn-abrir-aplicativos-3">Abrir o site</button>
+                    <button class="botao secundario" id="btn-verificar-2">Tentar de novo</button>
+                    <button class="botao secundario" id="btn-trocar-token-2">Usar outro token</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ------------------------------------------------------ catálogo -->
+        <div class="acervo" id="acervo-conteudo" hidden>
+            <div class="cabecalho-tela">
+                <nav class="sub-abas" id="sub-abas-acervo">
+                    <button class="sub-aba ativa" data-lista="acervo">Acervo</button>
+                    <button class="sub-aba" data-lista="favoritos">Favoritos</button>
+                    <button class="sub-aba" data-lista="baixados">Já baixados</button>
+                </nav>
+                <div class="acoes-cabecalho">
+                    <input type="search" id="busca-acervo" placeholder="Buscar no acervo…" maxlength="120">
+                    <button class="botao" id="btn-buscar">Buscar</button>
+                </div>
+            </div>
+
+            <div class="filtros" id="filtros-acervo">
+                <label><span>Categoria</span>
+                    <select id="filtro-categoria"></select>
+                </label>
+                <label><span>Resolução</span>
+                    <select id="filtro-res">
+                        <option value="">todas</option>
+                        <option value="4K">4K</option>
+                        <option value="Full HD">Full HD</option>
+                        <option value="HD">HD</option>
+                        <option value="SD">SD</option>
+                    </select>
+                </label>
+                <label><span>Década</span>
+                    <select id="filtro-decada">
+                        <option value="">todas</option>
+                        <option value="2020">2020</option>
+                        <option value="2010">2010</option>
+                        <option value="2000">2000</option>
+                        <option value="1990">1990</option>
+                        <option value="antes">antes</option>
+                    </select>
+                </label>
+                <label><span>Ordem</span>
+                    <select id="filtro-ordem">
+                        <option value="chegada">chegada</option>
+                        <option value="nota">nota</option>
+                        <option value="ano">ano</option>
+                        <option value="tamanho">tamanho</option>
+                    </select>
+                </label>
+                <label><span>Por página</span>
+                    <select id="filtro-por">
+                        <option value="20">20</option>
+                        <option value="10">10</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </label>
+                <label class="campo-switch compacto">
+                    <input type="checkbox" id="filtro-free">
+                    <span>Só o que não custa gema</span>
+                </label>
+                <button class="botao secundario" id="btn-limpar-filtros">Limpar</button>
+            </div>
+
+            <div class="grade" id="grade-acervo"></div>
+            <p class="vazio" id="vazio-acervo">Nada encontrado.</p>
+
+            <div class="sem-arquivo" id="bloco-sem-arquivo" hidden>
+                <h2>Encontrados no catálogo, ainda sem arquivo</h2>
+                <div class="grade compacta" id="grade-sem-arquivo"></div>
+            </div>
+
+            <div class="paginacao" id="paginacao-acervo" hidden>
+                <button class="botao secundario" id="btn-pagina-anterior">‹ Anterior</button>
+                <span id="rotulo-pagina">página 1 de 1</span>
+                <button class="botao secundario" id="btn-pagina-proxima">Próxima ›</button>
+            </div>
+        </div>
     </section>
 
     <!-- ------------------------------------------------------------ fila -->
@@ -81,6 +220,33 @@
     <section class="tela" id="tela-config">
         <div class="cabecalho-tela"><h1>Ajustes</h1></div>
         <div class="painel">
+
+            <fieldset class="grupo">
+                <legend>Conexão com o site</legend>
+                <p class="dica">
+                    A conta é identificada por um token de 100 caracteres, e este aparelho por
+                    um identificador próprio, criado na primeira execução e estável para sempre
+                    — é ele que ocupa uma das três vagas da sua conta.
+                </p>
+                <div class="ficha-aparelho">
+                    <div><span>Situação</span><b id="cfg-conexao-fase">—</b></div>
+                    <div><span>Token</span><b id="cfg-token">—</b></div>
+                    <div><span>Guardado</span><b id="cfg-token-protegido">—</b></div>
+                    <div><span>Identificador deste aparelho</span><b class="mono" id="cfg-instalacao">—</b></div>
+                    <div><span>Conta</span><b id="cfg-conta">—</b></div>
+                    <div><span>Gemas</span><b id="cfg-gemas">—</b></div>
+                </div>
+                <label class="campo">
+                    <span>Nome deste aparelho <small>é o que aparece no site ao lado do botão Permitir</small></span>
+                    <input type="text" id="cfg-nome-aparelho" maxlength="80" placeholder="Ex.: Notebook da sala">
+                </label>
+                <div class="linha">
+                    <button class="botao secundario" id="btn-cfg-abrir-site">Abrir a página de aplicativos</button>
+                    <button class="botao secundario" id="btn-cfg-verificar">Verificar agora</button>
+                    <button class="botao secundario perigo" id="btn-cfg-esquecer">Desconectar este aparelho</button>
+                </div>
+            </fieldset>
+
             <label class="campo">
                 <span>Pasta de downloads</span>
                 <div class="linha">
@@ -94,14 +260,14 @@
                 <input type="text" id="cfg-site">
             </label>
 
-            <label class="campo-switch">
-                <input type="checkbox" id="cfg-sequencial">
-                <span>Download sequencial <small>permite assistir antes de terminar</small></span>
+            <label class="campo">
+                <span>Endereço da API do aplicativo</span>
+                <input type="text" id="cfg-api">
             </label>
 
             <label class="campo-switch">
-                <input type="checkbox" id="cfg-renomear">
-                <span>Mostrar “Baixar” no lugar de “Baixar .torrent”</span>
+                <input type="checkbox" id="cfg-sequencial">
+                <span>Download sequencial <small>permite assistir antes de terminar</small></span>
             </label>
 
             <label class="campo-switch">
@@ -147,7 +313,6 @@
 
             <div class="linha">
                 <button class="botao" id="btn-salvar">Salvar</button>
-                <button class="botao secundario" id="btn-sair-site">Sair da conta do site</button>
             </div>
 
             <div class="sobre" id="sobre"></div>
@@ -159,7 +324,8 @@
                 </div>
                 <p class="dica">Junta num arquivo só as versões, os caminhos, o estado do
                    qBittorrent e do player, a fila e tudo o que o app registrou desde que abriu.
-                   É o arquivo para anexar quando for relatar um problema.</p>
+                   É o arquivo para anexar quando for relatar um problema. O token <b>não</b>
+                   entra nele.</p>
                 <p class="dica" id="caminho-diagnostico" hidden></p>
 
                 <div class="linha">
@@ -220,6 +386,54 @@
 
 </main>
 
+<!-- ------------------------------------------------- ficha de um título -->
+<div class="modal" id="ficha" hidden>
+    <div class="modal-fundo" id="ficha-fundo"></div>
+    <div class="modal-caixa larga" role="dialog" aria-modal="true" aria-labelledby="ficha-titulo">
+        <h2 id="ficha-titulo">Título</h2>
+        <div class="modal-corpo">
+            <div class="ficha-capa">
+                <div class="previa" id="ficha-previa"></div>
+                <button class="botao secundario" id="btn-ficha-favorito">☆ Favoritar</button>
+            </div>
+            <div class="modal-campos">
+                <div class="ficha-meta" id="ficha-meta"></div>
+                <table class="ficha-tecnica" id="ficha-tecnica"></table>
+                <h3>Opções de download</h3>
+                <div class="opcoes" id="ficha-opcoes"></div>
+                <div class="faltantes" id="ficha-faltantes" hidden></div>
+            </div>
+        </div>
+        <div class="modal-rodape">
+            <span class="espaco"></span>
+            <button class="botao secundario" id="btn-ficha-fechar">Fechar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ------------------------------------------- confirmação de gasto de gema -->
+<div class="modal" id="confirmacao" hidden>
+    <div class="modal-fundo" id="confirmacao-fundo"></div>
+    <div class="modal-caixa estreita" role="dialog" aria-modal="true" aria-labelledby="confirmacao-titulo">
+        <h2 id="confirmacao-titulo">Esta opção custa gemas</h2>
+        <div class="modal-corpo coluna">
+            <p id="confirmacao-texto"></p>
+            <div class="ficha-aparelho">
+                <div><span>Preço</span><b id="confirmacao-preco">—</b></div>
+                <div><span>Seu saldo</span><b id="confirmacao-saldo">—</b></div>
+                <div><span>Fica com</span><b id="confirmacao-resto">—</b></div>
+            </div>
+            <p class="dica">Baixar de novo um título que você já baixou cobra de novo.</p>
+        </div>
+        <div class="modal-rodape">
+            <span class="espaco"></span>
+            <button class="botao secundario" id="btn-confirmacao-cancelar">Cancelar</button>
+            <button class="botao" id="btn-confirmacao-ok">Baixar e gastar</button>
+        </div>
+    </div>
+</div>
+
+<!-- -------------------------------------------------- edição da biblioteca -->
 <div class="modal" id="modal" hidden>
     <div class="modal-fundo" id="modal-fundo"></div>
     <div class="modal-caixa" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">

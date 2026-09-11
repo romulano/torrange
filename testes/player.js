@@ -80,7 +80,7 @@ function torrentDoArquivo(caminho) {
             return;
         }
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(`<a class="botao-baixar" href="/baixar/1">↓ Baixar<span class="sufixo"> .torrent</span></a>`);
+        res.end(`<a href="/baixar/1">Baixar</a>`);
     });
     await new Promise((r) => servidor.listen(PORTA_SITE, '127.0.0.1', r));
 
@@ -102,20 +102,21 @@ function torrentDoArquivo(caminho) {
     app.stdout.on('data', (d) => registro.push(String(d)));
     app.stderr.on('data', (d) => registro.push(String(d)));
 
-    let ui = null, site = null, hash = null;
+    let ui = null, hash = null;
 
     try {
         const alvoUi = await acharAlvo(PORTA_CDP, (a) => a.url.includes('renderer/index.html'));
-        const alvoSite = await acharAlvo(PORTA_CDP, (a) => a.url.includes(`:${PORTA_SITE}`));
-        if (!alvoUi || !alvoSite) throw new Error('as views do app nao apareceram');
+        if (!alvoUi) throw new Error('a interface do app nao apareceu');
         ui = await Alvo.conectar(alvoUi.webSocketDebuggerUrl);
-        site = await Alvo.conectar(alvoSite.webSocketDebuggerUrl);
         await ui.enviar('Runtime.enable');
-        await site.enviar('Runtime.enable');
         await espera(1000);
 
         // ------------------------------------------------------ requisito 5
-        await site.avaliar(`document.querySelector('a.botao-baixar').click(); true`);
+        // O player nao depende de como o torrent chegou: entra pela caixa de
+        // endereco da aba Downloads.
+        await ui.avaliar(
+            `window.torrange.fila.adicionarUrl(${JSON.stringify(`http://127.0.0.1:${PORTA_SITE}/baixar/1`)})`
+        );
         let fila = [];
         for (let i = 0; i < 40; i++) {
             await espera(500);
@@ -233,7 +234,6 @@ function torrentDoArquivo(caminho) {
             } catch { /* app pode ja ter caido */ }
         }
         if (ui) ui.fechar();
-        if (site) site.fechar();
         await encerrarApp(PORTA_CDP, app);
         servidor.close();
 

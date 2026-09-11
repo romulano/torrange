@@ -48,6 +48,17 @@ function tamanho(bytes) {
         checar(rotulo, !!f, f ? `${f} (${tamanho(fs.statSync(path.join(DIST, f)).size)})` : 'nao encontrado');
     }
 
+    // Os pacotes do macOS so saem num Mac (o .dmg depende do hdiutil), entao
+    // aqui eles sao conferidos apenas quando estao presentes.
+    const macs = arquivos.filter((f) => /\.dmg$|mac.*\.zip$/.test(f));
+    if (macs.length) {
+        console.log(`\n  pacotes do macOS encontrados: ${macs.join(', ')}\n`);
+        checar('o .dmg do macOS existe', macs.some((f) => f.endsWith('.dmg')));
+        checar('o .zip do macOS existe', macs.some((f) => f.endsWith('.zip')));
+    } else {
+        console.log('\n  (sem pacotes de macOS neste dist/ -- eles so saem rodando npm run dist:mac num Mac)\n');
+    }
+
     // ---------------------------------------------- binarios dentro do .exe
     const zipWin = achar(/^Torrange-.*win.*\.zip$/);
     if (zipWin) {
