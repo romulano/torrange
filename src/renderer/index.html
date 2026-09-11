@@ -111,6 +111,29 @@
                 </span>
             </label>
 
+            <fieldset class="grupo">
+                <legend>Acesso ao qBittorrent</legend>
+                <p class="dica">Em branco, o app gera uma senha nova a cada vez e ninguém
+                   além dele entra. Preenchidos, estes dados passam a valer também para abrir
+                   a interface web do qBittorrent pelo navegador. Ficam salvos neste
+                   computador, em texto puro — use uma senha que não seja de mais nada.</p>
+                <div class="linha-dupla">
+                    <label class="campo">
+                        <span>Usuário</span>
+                        <input type="text" id="cfg-qbit-usuario" autocomplete="off" placeholder="deixe em branco para automático">
+                    </label>
+                    <label class="campo">
+                        <span>Senha</span>
+                        <input type="password" id="cfg-qbit-senha" autocomplete="new-password" placeholder="deixe em branco para automático">
+                    </label>
+                </div>
+                <label class="campo-switch">
+                    <input type="checkbox" id="cfg-qbit-ver-senha">
+                    <span>Mostrar a senha</span>
+                </label>
+                <p class="dica" id="qbit-endereco"></p>
+            </fieldset>
+
             <div class="linha-dupla">
                 <label class="campo">
                     <span>Limite de download (KB/s, 0 = sem limite)</span>

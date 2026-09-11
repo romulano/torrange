@@ -949,6 +949,8 @@ async function carregarConfig() {
     $('#cfg-janela-separada').checked = !!configuracao.videoEmJanelaSeparada;
     $('#cfg-limite-down').value = configuracao.limiteDownload || 0;
     $('#cfg-limite-up').value = configuracao.limiteUpload || 0;
+    $('#cfg-qbit-usuario').value = configuracao.qbitUsuario || '';
+    $('#cfg-qbit-senha').value = configuracao.qbitSenha || '';
     $('#volume').value = configuracao.volume ?? 100;
 
     const info = await api.info();
@@ -966,16 +968,53 @@ async function carregarConfig() {
 }
 
 async function salvarConfig() {
-    const novo = await api.config.gravar({
-        siteUrl: $('#cfg-site').value.trim() || configuracao.siteUrl,
-        downloadSequencial: $('#cfg-sequencial').checked,
-        renomearBotaoBaixar: $('#cfg-renomear').checked,
-        videoEmJanelaSeparada: $('#cfg-janela-separada').checked,
-        limiteDownload: Number($('#cfg-limite-down').value) || 0,
-        limiteUpload: Number($('#cfg-limite-up').value) || 0,
-    });
-    configuracao = novo;
-    aviso('Ajustes salvos.', 'ok');
+    const usuarioQbit = $('#cfg-qbit-usuario').value.trim();
+    const senhaQbit = $('#cfg-qbit-senha').value;
+
+    // um sem o outro não dá: o qBittorrent precisa do par para autenticar
+    if (!!usuarioQbit !== !!senhaQbit) {
+        aviso('Preencha usuário e senha do qBittorrent, ou deixe os dois em branco.', 'erro');
+        return;
+    }
+
+    const botao = $('#btn-salvar');
+    botao.disabled = true;
+    try {
+        const novo = await api.config.gravar({
+            siteUrl: $('#cfg-site').value.trim() || configuracao.siteUrl,
+            downloadSequencial: $('#cfg-sequencial').checked,
+            renomearBotaoBaixar: $('#cfg-renomear').checked,
+            videoEmJanelaSeparada: $('#cfg-janela-separada').checked,
+            limiteDownload: Number($('#cfg-limite-down').value) || 0,
+            limiteUpload: Number($('#cfg-limite-up').value) || 0,
+            qbitUsuario: usuarioQbit,
+            qbitSenha: senhaQbit,
+        });
+        configuracao = novo;
+        aviso('Ajustes salvos.', 'ok');
+        await mostrarAcessoQbit();
+    } finally {
+        botao.disabled = false;
+    }
+}
+
+/** Mostra onde e com qual usuário dá para abrir a WebUI do qBittorrent. */
+async function mostrarAcessoQbit() {
+    const campo = $('#qbit-endereco');
+    if (!campo) return;
+    try {
+        const info = await api.info();
+        if (!info.webui) {
+            campo.textContent = 'O qBittorrent não está no ar agora.';
+            return;
+        }
+        campo.textContent = info.qbitCredencialTemporaria
+            ? `No ar em ${info.webui}. Atenção: ele recusou as credenciais do app e está ` +
+              `usando a senha temporária que ele mesmo gerou (usuário "${info.qbitUsuario}").`
+            : `No ar em ${info.webui} — usuário "${info.qbitUsuario}".`;
+    } catch {
+        campo.textContent = '';
+    }
 }
 
 // ------------------------------------------------------------- diagnostico
@@ -1128,6 +1167,9 @@ function ligarEventos() {
         }
     });
     $('#btn-salvar').addEventListener('click', salvarConfig);
+    $('#cfg-qbit-ver-senha').addEventListener('change', (e) => {
+        $('#cfg-qbit-senha').type = e.target.checked ? 'text' : 'password';
+    });
     $('#btn-diagnostico-arquivo').addEventListener('click', gerarArquivoDiagnostico);
     $('#btn-abrir-diagnostico').addEventListener('click', () => {
         if (ultimoDiagnostico) api.diagnostico.abrirArquivo(ultimoDiagnostico);
@@ -1260,6 +1302,7 @@ function ligarEventos() {
     api.ao('qbit:estado', (d) => {
         estadoQbit = d || estadoQbit;
         renderEstadoQbit();
+        if (estadoQbit.fase === 'pronto') mostrarAcessoQbit();
     });
     api.ao('aviso', (d) => aviso(d.texto, d.tipo));
 
@@ -1289,6 +1332,7 @@ window.addEventListener('unhandledrejection', (e) => {
     // o qBittorrent pode ter subido (ou falhado) antes desta tela existir
     estadoQbit = (await api.qbit.estado()) || estadoQbit;
     renderEstadoQbit();
+    mostrarAcessoQbit();
     renderFila(true);
     renderBiblioteca(true);
 })();

@@ -17,10 +17,10 @@ Os instaladores estão publicados em
 
 | Sistema | Arquivo |
 | --- | --- |
-| Windows (instalador) | `Torrange-Setup-1.0.4.exe` |
-| Windows (portátil) | `Torrange-1.0.4-win.zip` |
-| Linux (Debian/Ubuntu) | `torrange_1.0.4_amd64.deb` |
-| Linux (universal) | `Torrange-1.0.4.AppImage` |
+| Windows (instalador) | `Torrange-Setup-1.0.5.exe` |
+| Windows (portátil) | `Torrange-1.0.5-win.zip` |
+| Linux (Debian/Ubuntu) | `torrange_1.0.5_amd64.deb` |
+| Linux (universal) | `Torrange-1.0.5.AppImage` |
 
 Os pacotes são autocontidos: trazem o Electron, o qBittorrent e o mpv dentro.
 Não é preciso instalar Node, npm nem o qBittorrent à parte.
@@ -44,7 +44,7 @@ Nada precisa ser instalado à parte.
 **Linux — Debian/Ubuntu**
 
 ```bash
-sudo apt install ./dist/torrange_1.0.4_amd64.deb
+sudo apt install ./dist/torrange_1.0.5_amd64.deb
 torrange                     # ou pelo menu de aplicativos: "Torrange"
 ```
 
@@ -54,14 +54,14 @@ Para remover: `sudo apt remove torrange`.
 **Linux — qualquer distro (AppImage)**
 
 ```bash
-chmod +x dist/Torrange-1.0.4.AppImage
-./dist/Torrange-1.0.4.AppImage
+chmod +x dist/Torrange-1.0.5.AppImage
+./dist/Torrange-1.0.5.AppImage
 ```
 
 **Windows**
 
-Execute `Torrange-Setup-1.0.4.exe` (instalador, cria atalhos) ou descompacte
-`Torrange-1.0.4-win.zip` e rode `Torrange.exe` (portátil, não instala nada).
+Execute `Torrange-Setup-1.0.5.exe` (instalador, cria atalhos) ou descompacte
+`Torrange-1.0.5-win.zip` e rode `Torrange.exe` (portátil, não instala nada).
 
 **Primeiro uso**
 
@@ -89,10 +89,10 @@ Os instaladores saem em `dist/`:
 
 | Arquivo | Plataforma | Tamanho |
 |---|---|---|
-| `Torrange-Setup-1.0.4.exe` | Windows — instalador | 154 MB |
-| `Torrange-1.0.4-win.zip` | Windows — portátil | 207 MB |
-| `Torrange-1.0.4.AppImage` | Linux — universal | 185 MB |
-| `torrange_1.0.4_amd64.deb` | Linux — Debian/Ubuntu | 147 MB |
+| `Torrange-Setup-1.0.5.exe` | Windows — instalador | 154 MB |
+| `Torrange-1.0.5-win.zip` | Windows — portátil | 207 MB |
+| `Torrange-1.0.5.AppImage` | Linux — universal | 185 MB |
+| `torrange_1.0.5_amd64.deb` | Linux — Debian/Ubuntu | 147 MB |
 
 Para gerar só uma plataforma:
 
@@ -127,6 +127,7 @@ HTML do botão do torrange e serve um `.torrent` válido.
 ```bash
 npm run teste                                     # site, rótulo "Baixar", entradas da aba Downloads e qBittorrent
 npm run teste:qbit                                # espera pelo qBittorrent, falha visível e o .log de diagnóstico
+npm run teste:credenciais                         # usuário e senha próprios do qBittorrent
 npm run teste:player -- /caminho/video.mkv        # player: faixas, busca, pausa
 npm run teste:biblioteca -- /caminho/video.mkv    # pastas, capas e edição
 npm run teste:pacote                              # confere os instaladores gerados
@@ -220,6 +221,26 @@ tudo o que costuma explicar um problema relatado:
 O registro começa a ser gravado na subida do app, não na hora em que se pede o
 arquivo, senão a parte mais importante já teria passado. É o arquivo para
 anexar ao relatar um problema.
+
+### Usuário e senha do qBittorrent
+
+Em branco (o padrão), o app gera uma senha nova a cada execução e ninguém além
+dele entra — a senha nunca sai da máquina. Preenchidos em **Ajustes → Acesso ao
+qBittorrent**, os dados passam a valer também para abrir a interface web do
+qBittorrent pelo navegador, no endereço que a própria tela mostra. Eles ficam
+salvos em `config.json`, em texto puro, e o arquivo de diagnóstico **omite a
+senha**.
+
+> O nome do arquivo de configuração muda por plataforma: o qBittorrent lê
+> `qBittorrent.ini` no Windows e `qBittorrent.conf` no resto. O app escreve os
+> dois. Escrever só o `.conf` fazia o qBittorrent do Windows ignorar tudo o que
+> o app configura — subia com os padrões dele, sem o nosso usuário e senha (e
+> com a WebUI escutando em todas as interfaces, não só em `127.0.0.1`), o login
+> falhava e nada era baixado.
+>
+> Como segunda rede de segurança, se o qBittorrent recusar as credenciais do
+> app, este entra com a senha temporária que o próprio qBittorrent anuncia na
+> saída — e diz isso na tela de Ajustes.
 
 ### qBittorrent embutido
 
@@ -330,6 +351,7 @@ src/renderer/                 interface (abas, fila, biblioteca, player)
 testes/
     e2e.js                    site, rótulo do botão e envio ao qBittorrent
     espera-qbit.js            espera pelo qBittorrent, falha visível e diagnóstico
+    credenciais.js            usuário e senha próprios, e os dois nomes do .conf
     interface.js              navegação entre abas e sobreposições
     player.js                 biblioteca e player com um MKV real
     biblioteca.js             pastas, capas e edição

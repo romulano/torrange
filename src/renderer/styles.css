@@ -161,6 +161,19 @@ button, input, select { font: inherit; color: inherit; }
 /* a caixa da aba Downloads recebe magnet e endereco web: precisa de espaco */
 #campo-magnet { min-width: 300px; flex: 1 1 300px; }
 
+.grupo {
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 14px 16px 4px;
+    margin: 4px 0 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.grupo legend { padding: 0 6px; font-weight: 650; font-size: 13px; }
+.grupo .dica { margin: 0; }
+
 /* faixa de estado do qBittorrent: fica na tela ate o problema passar */
 .estado-qbit {
     display: flex;
@@ -194,7 +207,7 @@ button, input, select { font: inherit; color: inherit; }
     user-select: text;
 }
 
-input[type="text"], input[type="search"], input[type="number"], select {
+input[type="text"], input[type="search"], input[type="number"], input[type="password"], select {
     background: var(--fundo-2);
     border: 1px solid var(--borda);
     border-radius: 8px;

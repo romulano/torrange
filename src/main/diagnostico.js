@@ -207,7 +207,11 @@ async function montar(fontes = {}) {
     );
 
     partes.push(secao('Configuração'));
-    partes.push(comoTexto(config));
+    // a senha da WebUI e do usuario: fica de fora de um arquivo feito para ser
+    // anexado num relato de problema
+    const configSegura = Object.assign({}, config);
+    if (configSegura.qbitSenha) configSegura.qbitSenha = '<definida, omitida daqui>';
+    partes.push(comoTexto(configSegura));
     partes.push(`\npasta de downloads: ${comoTexto(espacoEmDisco(config.pastaDownloads || os.homedir()))}`);
 
     partes.push(secao('qBittorrent'));

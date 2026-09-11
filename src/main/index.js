@@ -484,6 +484,9 @@ function registrarIpc() {
         plataforma: process.platform,
         empacotado: app.isPackaged,
         qbit: qbit.ativo ? `127.0.0.1:${qbit.porta}` : 'parado',
+        webui: qbitPronto ? `http://127.0.0.1:${qbit.porta}` : null,
+        qbitUsuario: qbit.usuario(),
+        qbitCredencialTemporaria: qbit.usandoCredencialTemporaria(),
         dados: app.getPath('userData'),
         // caminhos dos binarios embutidos: a primeira coisa a conferir quando
         // o qBittorrent ou o player nao sobem
@@ -537,9 +540,24 @@ function registrarIpc() {
     ipcMain.handle('config:ler', () => config.ler());
 
     ipcMain.handle('config:gravar', async (_e, parcial) => {
+        const antes = config.ler();
+        const trocouCredencial =
+            parcial &&
+            (('qbitUsuario' in parcial && parcial.qbitUsuario !== antes.qbitUsuario) ||
+                ('qbitSenha' in parcial && parcial.qbitSenha !== antes.qbitSenha));
+
         const novo = config.gravar(parcial);
-        if (qbitPronto) await qbit.aplicarPreferencias(novo);
         if (parcial && parcial.siteUrl) site.navegar('inicio', novo.siteUrl);
+
+        // As credenciais entram no qBittorrent.conf, que so e lido na subida:
+        // sem religar, o que o usuario acabou de digitar nao valeria nada.
+        if (trocouCredencial) {
+            avisar('Religando o qBittorrent com as novas credenciais…', 'info');
+            await reiniciarQbit();
+            return novo;
+        }
+
+        if (qbitPronto) await qbit.aplicarPreferencias(novo);
         return novo;
     });
 
@@ -599,6 +617,14 @@ async function reunirDiagnostico() {
 }
 
 let subindoQbit = false;
+
+/** Religa o qBittorrent do zero (o subir() derruba a instancia anterior). */
+async function reiniciarQbit() {
+    qbitPronto = false;
+    subindoQbit = false;
+    estadoQbit.tentativa = 0;
+    await subirQbit();
+}
 
 async function subirQbit() {
     if (subindoQbit || qbitPronto) return;

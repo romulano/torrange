@@ -15,7 +15,23 @@ const path = require('path');
 const { binarioQbit, pastaDados, garantirPasta } = require('./paths');
 
 const CATEGORIA = 'torrange';
-const USUARIO = 'torrange';
+const USUARIO_PADRAO = 'torrange';
+
+/**
+ * O NOME DO ARQUIVO DE CONFIGURACAO MUDA POR PLATAFORMA: o qBittorrent le
+ * qBittorrent.ini no Windows e qBittorrent.conf no resto. Escrever so o .conf
+ * fazia o qBittorrent do Windows ignorar TUDO o que o app configura -- subia
+ * com os padroes dele, sem usuario nem senha nossos (gerava uma senha
+ * temporaria para o usuario "admin") e com a WebUI escutando em todas as
+ * interfaces em vez de so em 127.0.0.1. O login falhava, o app achava que o
+ * qBittorrent nao tinha subido, e nada era baixado.
+ *
+ * Escrevemos os dois nomes: custa nada e funciona em qualquer combinacao.
+ */
+const NOMES_CONFIG =
+    process.platform === 'win32'
+        ? ['qBittorrent.ini', 'qBittorrent.conf']
+        : ['qBittorrent.conf', 'qBittorrent.ini'];
 
 let processo = null;
 let porta = 0;
@@ -30,6 +46,12 @@ let ultimoErro = '';
 // so SID), entao guardamos o par "nome=valor" inteiro em vez de so o valor.
 let cookieSessao = '';
 let encerrando = false;
+let trocandoProcesso = false;
+let usuario = USUARIO_PADRAO;
+// Credenciais que o proprio qBittorrent anuncia na saida quando nao encontra
+// as nossas -- rede de seguranca para nao ficarmos trancados do lado de fora.
+let credencialTemporaria = null;
+let usandoCredencialTemporaria = false;
 
 // --------------------------------------------------------------------------
 // Infra
@@ -105,14 +127,19 @@ function ajustarIni(texto, mudancas) {
 }
 
 function escreverConfig(pastaPerfil, pastaDownloads) {
-    const arquivo = path.join(pastaPerfil, 'qBittorrent', 'config', 'qBittorrent.conf');
-    garantirPasta(path.dirname(arquivo));
+    const pasta = path.join(pastaPerfil, 'qBittorrent', 'config');
+    garantirPasta(pasta);
+    const arquivos = NOMES_CONFIG.map((nome) => path.join(pasta, nome));
 
+    // preserva o que o usuario ja tenha mexido, venha do arquivo que vier
     let atual = '';
-    try {
-        atual = fs.readFileSync(arquivo, 'utf8');
-    } catch {
-        atual = '';
+    for (const arquivo of arquivos) {
+        try {
+            atual = fs.readFileSync(arquivo, 'utf8');
+            break;
+        } catch {
+            /* tenta o proximo nome */
+        }
     }
 
     const caminho = pastaDownloads.replace(/\\/g, '/');
@@ -122,7 +149,7 @@ function escreverConfig(pastaPerfil, pastaDownloads) {
             'WebUI\\Enabled': 'true',
             'WebUI\\Address': '127.0.0.1',
             'WebUI\\Port': String(porta),
-            'WebUI\\Username': USUARIO,
+            'WebUI\\Username': usuario,
             'WebUI\\Password_PBKDF2': `"${hashSenha(senha)}"`,
             'WebUI\\LocalHostAuth': 'true',
             'WebUI\\CSRFProtection': 'false',
@@ -143,7 +170,8 @@ function escreverConfig(pastaPerfil, pastaDownloads) {
         },
     });
 
-    fs.writeFileSync(arquivo, novo, 'utf8');
+    for (const arquivo of arquivos) fs.writeFileSync(arquivo, novo, 'utf8');
+    return arquivos;
 }
 
 // --------------------------------------------------------------------------
@@ -246,29 +274,77 @@ function multipart(campos, arquivo) {
     return { corpo: Buffer.concat(partes), tipo: `multipart/form-data; boundary=${limite}` };
 }
 
-async function login() {
+/** Uma tentativa de login. Devolve o motivo da recusa, ou null se entrou. */
+async function tentarLogin(nome, chave) {
     cookieSessao = '';
     const r = await requisicao('/api/v2/auth/login', {
         metodo: 'POST',
-        corpo: formulario({ username: USUARIO, password: senha }),
+        corpo: formulario({ username: nome, password: chave }),
         tipo: 'application/x-www-form-urlencoded',
     });
     // 5.x responde 204 (sem corpo) com o cookie de sessao; 4.x respondia
     // 200 "Ok.". Senha errada da 401 nas duas.
     const autenticou = r.status === 204 || (r.status === 200 && /Ok/i.test(r.texto));
     if (!autenticou) {
-        const motivo = r.status === 401 || /Fails/i.test(r.texto) ? 'usuario ou senha recusados' : `HTTP ${r.status}`;
-        throw new Error(`Falha ao autenticar no qBittorrent: ${motivo}`);
+        return r.status === 401 || /Fails/i.test(r.texto)
+            ? 'usuario ou senha recusados'
+            : `HTTP ${r.status}`;
     }
-    if (!cookieSessao) {
-        throw new Error('O qBittorrent aceitou o login mas nao enviou o cookie de sessao.');
+    if (!cookieSessao) return 'o qBittorrent aceitou o login mas nao enviou o cookie de sessao';
+    return null;
+}
+
+async function login() {
+    let motivo = await tentarLogin(usuario, senha);
+
+    // Se ele nao leu a nossa configuracao, ainda assim anuncia na saida um
+    // usuario e uma senha temporaria -- entramos por ali em vez de desistir.
+    if (motivo && credencialTemporaria) {
+        const alternativo = await tentarLogin(
+            credencialTemporaria.usuario,
+            credencialTemporaria.senha
+        );
+        if (!alternativo) {
+            usuario = credencialTemporaria.usuario;
+            senha = credencialTemporaria.senha;
+            usandoCredencialTemporaria = true;
+            anotar(
+                `o qBittorrent nao aceitou as credenciais do app; entrei com a senha temporaria ` +
+                    `que ele anunciou (usuario "${usuario}")`
+            );
+            motivo = null;
+        }
     }
+
+    if (motivo) throw new Error(`Falha ao autenticar no qBittorrent: ${motivo}`);
 
     // confirma que a sessao realmente vale para as demais chamadas
     const teste = await requisicao('/api/v2/app/version');
     if (teste.status !== 200) {
         throw new Error(`A WebUI recusou a sessao (HTTP ${teste.status}).`);
     }
+}
+
+/**
+ * Le da saida do qbittorrent-nox o usuario e a senha temporaria que ele
+ * anuncia quando sobe sem senha configurada. O texto sai traduzido, entao
+ * casamos as duas formas e tambem uma bem frouxa.
+ */
+function lerCredencialAnunciada(texto) {
+    const senhaAchada =
+        /senha tempor[áa]ria[^:]*:\s*(\S+)/i.exec(texto) ||
+        /temporary password[^:]*:\s*(\S+)/i.exec(texto) ||
+        /password is[^:]*:\s*(\S+)/i.exec(texto);
+    if (!senhaAchada) return;
+
+    const nomeAchado =
+        /nome de usu[áa]rio[^:]*:\s*(\S+)/i.exec(texto) ||
+        /username is[^:]*:\s*(\S+)/i.exec(texto);
+
+    credencialTemporaria = {
+        usuario: nomeAchado ? nomeAchado[1].trim() : 'admin',
+        senha: senhaAchada[1].trim(),
+    };
 }
 
 function esperar(ms) {
@@ -317,6 +393,7 @@ async function iniciar(config, aoLog = () => {}) {
 }
 
 async function subir(config, aoLog) {
+    encerrando = false; // pode ser um religamento depois de trocar as credenciais
     const executavel = binarioQbit();
     if (!fs.existsSync(executavel)) {
         throw new Error(
@@ -327,9 +404,23 @@ async function subir(config, aoLog) {
     const perfil = garantirPasta(pastaDados('qbittorrent'));
     garantirPasta(config.pastaDownloads);
 
+    // Uma sobra da tentativa anterior segura o lock de instancia unica do
+    // qBittorrent: a nova sobe e morre na hora. Limpa antes de tentar.
+    await matarProcesso();
+
     porta = await portaLivre();
-    senha = crypto.randomBytes(24).toString('base64url');
-    escreverConfig(perfil, config.pastaDownloads);
+    credencialTemporaria = null;
+    usandoCredencialTemporaria = false;
+
+    // Credenciais proprias, quando o usuario configurou; senao uma senha nova
+    // a cada execucao, que nunca sai daqui.
+    const proprias = !!(config.qbitUsuario && config.qbitSenha);
+    usuario = proprias ? String(config.qbitUsuario).trim() : USUARIO_PADRAO;
+    senha = proprias ? String(config.qbitSenha) : crypto.randomBytes(24).toString('base64url');
+
+    const arquivos = escreverConfig(perfil, config.pastaDownloads);
+    anotar(`configuracao escrita em: ${arquivos.join(' , ')}`);
+    anotar(`usuario da WebUI: ${usuario}${proprias ? ' (definido nos Ajustes)' : ''}`);
 
     if (process.platform !== 'win32') {
         try {
@@ -350,8 +441,13 @@ async function subir(config, aoLog) {
         aoLog(texto);
     };
 
-    processo.stdout.on('data', (d) => registrar(String(d)));
-    processo.stderr.on('data', (d) => registrar(String(d)));
+    const receber = (d) => {
+        const texto = String(d);
+        lerCredencialAnunciada(texto);
+        registrar(texto);
+    };
+    processo.stdout.on('data', receber);
+    processo.stderr.on('data', receber);
 
     // Sem este ouvinte um spawn que falha (executavel bloqueado pelo antivirus,
     // DLL faltando, permissao negada) derruba o processo principal inteiro.
@@ -362,7 +458,7 @@ async function subir(config, aoLog) {
     });
 
     processo.on('exit', (codigo, sinal) => {
-        if (!encerrando) {
+        if (!encerrando && !trocandoProcesso) {
             registrar(`qbittorrent-nox saiu inesperadamente (codigo ${codigo}, sinal ${sinal})`);
         }
         processo = null;
@@ -406,6 +502,30 @@ async function aplicarPreferencias(config) {
     } catch (e) {
         /* nao e fatal */
     }
+}
+
+/** Derruba uma sobra da tentativa anterior, sem marcar o app como encerrando. */
+async function matarProcesso() {
+    if (!processo) return;
+    const p = processo;
+    trocandoProcesso = true;
+    anotar('derrubando o qbittorrent-nox da tentativa anterior');
+    try {
+        p.kill();
+    } catch {
+        /* ja morreu */
+    }
+    for (let i = 0; i < 20 && p.exitCode === null; i++) await esperar(150);
+    if (p.exitCode === null) {
+        try {
+            p.kill('SIGKILL');
+        } catch {
+            /* ja morreu */
+        }
+        await esperar(400);
+    }
+    processo = null;
+    trocandoProcesso = false;
 }
 
 async function encerrar() {
@@ -522,6 +642,8 @@ module.exports = {
     aplicarPreferencias,
     registro: () => registro.slice(),
     ultimoErro: () => ultimoErro,
+    usuario: () => usuario,
+    usandoCredencialTemporaria: () => usandoCredencialTemporaria,
     CATEGORIA,
     get porta() {
         return porta;

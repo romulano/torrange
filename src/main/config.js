@@ -24,6 +24,12 @@ function padroes() {
         limiteUpload: 0,
         renomearBotaoBaixar: true,
         volume: 100,
+        // Credenciais da WebUI do qBittorrent embutido. Vazias = o app gera uma
+        // senha nova a cada execucao, que nunca sai da maquina. Preenchidas,
+        // valem tanto para o qBittorrent embutido quanto para entrar na WebUI
+        // dele pelo navegador.
+        qbitUsuario: '',
+        qbitSenha: '',
     };
 }
 
