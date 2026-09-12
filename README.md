@@ -112,6 +112,46 @@ Em máquinas sem cofre de credenciais (Linux sem chaveiro) ele cai para um
 arquivo com permissão `600`, e a tela de **Ajustes** diz isso em vez de fingir
 que está protegido.
 
+### O acervo, igual ao do site
+
+A aba **Acervo** repete o desenho do site: uma grade de pôsteres, cada cartão
+com a resolução num canto, a estrela de favorito no outro e o título sobre um
+degradê no pé. Abaixo do pôster vêm nota, ano, faixa de tamanho e a trilha
+`categoria › subcategoria`.
+
+Abrir um título leva à ficha, também no mesmo desenho: capa borrada ao fundo,
+pôster, título e título alternativo, os chips de nota, categoria e tamanho, e
+as tags.
+
+**Filme** → um bloco *Opções de download* com a lista plana. Clicar numa opção
+abre a ficha técnica embaixo dela (formato, resolução, áudio, codecs, idioma
+original, data).
+
+**Série** → um bloco *Temporadas*, com o mesmo cabeçalho do site
+(`3 temporadas · 8 arquivos`) e um accordion por temporada, da mais nova para a
+mais velha, com a primeira já aberta. Dentro de cada uma:
+
+- quando o tracker tem os episódios avulsos, um grupo **Episódio N** por
+  episódio, do último para o primeiro;
+- quando só existe o pacote, um grupo **Temporada completa** com a faixa de
+  tamanho e quantas opções há.
+
+O resumo à direita de cada temporada diz qual dos dois casos é: *“6 episódios”*
+ou *“temporada completa”*.
+
+O agrupamento sai dos campos `temporada` e `episodio` que a API manda em cada
+opção — o app não inventa nada nem adivinha pelo nome do arquivo.
+
+Fecham a ficha os itens **Sem arquivo**: o que existe no catálogo do tracker e
+ainda não tem arquivo. O app só os mostra; *pedir* é coisa do site, porque a API
+não expõe rota para isso.
+
+> **Uma diferença de propósito:** no site o cartão de uma série diz
+> “3 temps.”. A API do aplicativo não devolve a contagem de temporadas na
+> listagem — só o total de opções — então o cartão do app diz “8 arquivos”.
+> Contar temporadas exigiria abrir a ficha de cada card, o que estouraria o
+> teto de chamadas por minuto.
+
 ### Do clique ao download
 
 A ficha de um título lista as opções com tamanho, seeders e preço. Ao clicar em

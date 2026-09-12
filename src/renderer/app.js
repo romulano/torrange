@@ -404,6 +404,12 @@ function renderGradeAcervo(titulos, dados) {
 
     for (const t of titulos) grade.append(cartaoDeAcervo(t));
 
+    // "420 títulos", como no cabeçalho do site
+    const resumo = $('#resumo-acervo');
+    const total = Number(dados && dados.total) || 0;
+    resumo.textContent = total ? `${numero(total)} ${total === 1 ? 'título' : 'títulos'}` : '';
+    resumo.hidden = !resumo.textContent;
+
     const vazio = $('#vazio-acervo');
     vazio.hidden = titulos.length > 0;
     vazio.textContent =
@@ -413,7 +419,7 @@ function renderGradeAcervo(titulos, dados) {
               ? 'Nada baixado por esta conta ainda.'
               : 'Nada encontrado com esses filtros.';
 
-    // titulos que a busca achou e que ainda nao tem arquivo
+    // títulos que a busca achou e que ainda não têm arquivo
     const semArquivo = (dados && dados.sem_arquivo) || [];
     $('#bloco-sem-arquivo').hidden = semArquivo.length === 0;
     const gradeSem = $('#grade-sem-arquivo');
@@ -427,6 +433,10 @@ function renderGradeAcervo(titulos, dados) {
     $('#btn-pagina-proxima').disabled = paginaAtual >= totalPaginas;
 }
 
+function numero(n) {
+    return Number(n).toLocaleString('pt-BR');
+}
+
 /**
  * A capa vem por um esquema proprio: acervo://capa/<item>. O renderer nunca
  * monta URL de bucket nem ve o token -- quem busca a imagem e o processo
@@ -437,62 +447,121 @@ function capaDoTitulo(t) {
     return `acervo://capa/${encodeURIComponent(t.item_referencia)}`;
 }
 
+/**
+ * Cartao do acervo, no mesmo desenho do site: o poster ocupa o cartao, com a
+ * resolucao num canto, a estrela no outro e o titulo sobre um degrade no pe.
+ */
 function cartaoDeAcervo(t, { semDownload = false } = {}) {
-    const cartao = elemento('div', 'cartao acervo-cartao');
+    const cartao = elemento('article', 'cartao-acervo');
 
-    const topo = elemento('div', 'cartao-topo');
-    topo.append(caixaDeCapa(capaDoTitulo(t), t.serie ? '📺' : '🎬'));
+    const poster = elemento('div', 'poster');
+    const url = capaDoTitulo(t);
+    if (url) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.addEventListener('error', () => {
+            img.remove();
+            poster.classList.add('sem-capa');
+        });
+        poster.append(img);
+    } else {
+        poster.classList.add('sem-capa');
+    }
 
-    const info = elemento('div', 'cartao-info');
-    const h3 = elemento('h3', null, t.titulo || '(sem título)');
-    info.append(h3);
-    if (t.titulo_alternativo) info.append(elemento('div', 'alternativo', t.titulo_alternativo));
+    if (t.melhor_resolucao) poster.append(elemento('span', 'selo-res', t.melhor_resolucao));
+
+    if (!semDownload && !t.nada_para_baixar) {
+        // A listagem nao diz se o titulo esta nos favoritos; na aba Favoritos,
+        // porem, todos estao -- entao a estrela ja nasce marcada la.
+        const estrela = estrelaDeFavorito(t, listaAtual === 'favoritos');
+        estrela.classList.add('no-poster');
+        estrela.addEventListener('click', (e) => e.stopPropagation());
+        poster.append(estrela);
+    }
+
+    // A API nao informa quantas temporadas um titulo tem -- so o total de
+    // opcoes. Numa serie cada opcao e um episodio ou um pacote de temporada,
+    // entao o rotulo honesto aqui e "arquivos"; num filme, "opcoes".
+    const quantas = Number(t.total_opcoes) || 0;
+    if (quantas > 1) {
+        poster.append(
+            elemento('span', 'selo-opcoes', t.serie ? `${quantas} arquivos` : `${quantas} opç.`)
+        );
+    }
+
+    const faixa = elemento('div', 'poster-titulo');
+    faixa.append(elemento('b', null, t.titulo || '(sem título)'));
+    poster.append(faixa);
+    cartao.append(poster);
+
+    const info = elemento('div', 'cartao-acervo-info');
+    info.append(elemento('h3', null, t.titulo || '(sem título)'));
 
     const partes = [];
+    if (t.nota_imdb) partes.push(`★ ${String(t.nota_imdb).replace('.', ',')}`);
     if (t.ano) partes.push(String(t.ano));
-    if (t.categoria) partes.push(t.categoria);
-    if (t.melhor_resolucao) partes.push(t.melhor_resolucao);
     if (t.faixa_de_tamanho) partes.push(t.faixa_de_tamanho);
-    if (t.nota_imdb) partes.push(`★ ${t.nota_imdb}`);
-    info.append(elemento('div', 'meta', partes.join(' · ')));
-
     if (t.baixadoEm) {
         const quando = new Date(t.baixadoEm);
-        const texto = isNaN(quando)
-            ? ''
-            : `baixado em ${quando.toLocaleDateString('pt-BR')}${t.vezes > 1 ? ` · ${t.vezes}×` : ''}`;
-        if (texto) info.append(elemento('div', 'meta', texto));
+        if (!isNaN(quando)) {
+            partes.push(
+                `baixado em ${quando.toLocaleDateString('pt-BR')}${t.vezes > 1 ? ` · ${t.vezes}×` : ''}`
+            );
+        }
     }
+    info.append(elemento('div', 'meta', partes.join(' · ')));
 
-    if (t.tags && t.tags.length) {
-        const chips = elemento('div', 'chips');
-        for (const tag of t.tags) chips.append(elemento('span', 'chip', tag));
-        info.append(chips);
+    const trilha = elemento('div', 'trilha-categoria');
+    if (t.categoria) {
+        trilha.append(elemento('span', null, t.categoria));
+        const sub = (t.tags || [])[0];
+        if (sub) {
+            trilha.append(elemento('span', 'separador', '›'));
+            trilha.append(elemento('span', 'sub', sub));
+        }
     }
+    info.append(trilha);
 
-    topo.append(info);
-    cartao.append(topo);
-
-    const rodape = elemento('div', 'rodape');
     if (semDownload || t.nada_para_baixar) {
-        rodape.append(elemento('span', 'sem-arquivo-aviso', 'ainda sem arquivo'));
-    } else {
-        const opcoes = elemento(
-            'button',
-            'botao',
-            t.total_opcoes > 1 ? `Ver ${t.total_opcoes} opções` : 'Ver e baixar'
-        );
-        opcoes.addEventListener('click', () => abrirFicha(t.chave));
-        rodape.append(opcoes);
-
-        const estrela = elemento('button', 'botao secundario', '☆');
-        estrela.title = 'Favoritar';
-        estrela.addEventListener('click', () => favoritar(t.chave, t.item_referencia, estrela));
-        rodape.append(estrela);
+        info.append(elemento('div', 'sem-arquivo-aviso', 'ainda sem arquivo'));
     }
-    cartao.append(rodape);
+    cartao.append(info);
+
+    if (!semDownload && !t.nada_para_baixar) {
+        cartao.classList.add('clicavel');
+        cartao.tabIndex = 0;
+        const abrir = () => abrirFicha(t.chave);
+        cartao.addEventListener('click', (e) => {
+            if (e.target.closest('button')) return;
+            abrir();
+        });
+        cartao.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                abrir();
+            }
+        });
+    }
 
     return cartao;
+}
+
+/** A estrela de favorito, no mesmo desenho do site. */
+function estrelaDeFavorito(t, marcada) {
+    const estrela = elemento('button', 'estrela', marcada ? '★' : '☆');
+    estrela.type = 'button';
+    marcarEstrela(estrela, marcada);
+    estrela.addEventListener('click', () => favoritar(t.chave, t.item_referencia, estrela));
+    return estrela;
+}
+
+function marcarEstrela(estrela, marcada) {
+    estrela.classList.toggle('marcada', !!marcada);
+    estrela.textContent = marcada ? '★' : '☆';
+    estrela.title = marcada ? 'Remover dos favoritos' : 'Adicionar aos favoritos';
+    estrela.setAttribute('aria-label', estrela.title);
 }
 
 async function favoritar(chave, item, botao) {
@@ -505,8 +574,8 @@ async function favoritar(chave, item, botao) {
             return;
         }
         const ligado = !!(r.dados && r.dados.ligado);
-        botao.textContent = ligado ? '★' : '☆';
-        botao.title = ligado ? 'Tirar dos favoritos' : 'Favoritar';
+        marcarEstrela(botao, ligado);
+        // saiu dos favoritos com a aba Favoritos aberta: some da lista
         if (listaAtual === 'favoritos' && !ligado) carregarAcervo();
     } finally {
         botao.disabled = false;
@@ -514,8 +583,13 @@ async function favoritar(chave, item, botao) {
 }
 
 // ----------------------------------------------------------- ficha do titulo
+//
+// O desenho segue o do site: capa e identidade em cima, e embaixo ou as
+// "Opcoes de download" (filme) ou as "Temporadas" (serie), cada temporada num
+// accordion com os episodios dentro. A opcao selecionada abre a ficha tecnica.
 
 let fichaAtual = null;
+let opcaoAberta = null;
 
 async function abrirFicha(chave) {
     const r = await api.acervo.titulo(chave);
@@ -530,130 +604,316 @@ async function abrirFicha(chave) {
         aviso('Esse título não existe mais para esta conta.', 'erro');
         return;
     }
+    opcaoAberta = null;
     renderFicha(fichaAtual);
     $('#ficha').hidden = false;
+    $('#ficha .ficha-rolagem').scrollTop = 0;
 }
 
 function fecharFicha() {
     $('#ficha').hidden = true;
     fichaAtual = null;
+    opcaoAberta = null;
+}
+
+/**
+ * Agrupa as opcoes como o site faz: por temporada e, dentro dela, por
+ * episodio. Opcao sem temporada (o caso do filme) cai num grupo unico.
+ * Temporadas e episodios saem em ordem decrescente, do mais novo para o mais
+ * velho -- e assim que o site lista.
+ */
+function agruparPorTemporada(opcoes) {
+    const temporadas = new Map();
+    for (const o of opcoes || []) {
+        const t = o.temporada ?? null;
+        if (!temporadas.has(t)) temporadas.set(t, new Map());
+        const grupos = temporadas.get(t);
+        const e = o.episodio ?? null;
+        if (!grupos.has(e)) grupos.set(e, []);
+        grupos.get(e).push(o);
+    }
+    const ordem = (a, b) => (Number(b) || 0) - (Number(a) || 0);
+    return [...temporadas.keys()].sort(ordem).map((numeroTemp) => {
+        const grupos = temporadas.get(numeroTemp);
+        return {
+            numero: numeroTemp,
+            grupos: [...grupos.keys()].sort(ordem).map((episodio) => ({
+                episodio,
+                opcoes: grupos.get(episodio),
+            })),
+        };
+    });
+}
+
+/** "6 episódios" ou "temporada completa" -- o resumo à direita do accordion. */
+function resumoDaTemporada(temporada) {
+    const episodios = temporada.grupos.filter((g) => g.episodio !== null).length;
+    if (!episodios) return 'temporada completa';
+    return episodios === 1 ? '1 episódio' : `${episodios} episódios`;
 }
 
 function renderFicha(t) {
+    const url = capaDoTitulo(t);
+
     $('#ficha-titulo').textContent = t.titulo || '(sem título)';
 
-    const previa = $('#ficha-previa');
-    previa.replaceChildren();
-    const url = capaDoTitulo(t);
+    const fundo = $('#ficha-fundo-capa');
+    fundo.style.backgroundImage = url ? `url("${url}")` : '';
+    fundo.hidden = !url;
+
+    const poster = $('#ficha-poster');
+    poster.replaceChildren();
+    poster.classList.toggle('sem-capa', !url);
     if (url) {
         const img = document.createElement('img');
         img.src = url;
         img.alt = '';
         img.addEventListener('error', () => {
             img.remove();
-            previa.textContent = 'sem capa';
+            poster.classList.add('sem-capa');
         });
-        previa.append(img);
-    } else {
-        previa.textContent = 'sem capa';
+        poster.append(img);
     }
+
+    // "The Grudge · 2020"
+    const sub = [t.titulo_alternativo, t.ano].filter(Boolean).join(' · ');
+    $('#ficha-subtitulo').textContent = sub;
+    $('#ficha-subtitulo').hidden = !sub;
+
+    const chips = $('#ficha-chips');
+    chips.replaceChildren();
+    if (t.nota_imdb) {
+        chips.append(elemento('span', 'chip-nota', `★ IMDb ${String(t.nota_imdb).replace('.', ',')}`));
+    }
+    if (t.categoria) {
+        const sub1 = (t.tags || [])[0];
+        chips.append(
+            elemento('span', 'chip-categoria', sub1 ? `${t.categoria} › ${sub1}` : t.categoria)
+        );
+    }
+    if (t.faixa_de_tamanho) chips.append(elemento('span', 'chip-neutro', t.faixa_de_tamanho));
+
+    // A API do aplicativo nao devolve sinopse (o site tem, a rota nao manda).
+    // O campo fica pronto para quando mandar, e escondido enquanto nao vier.
+    const sinopse = $('#ficha-sinopse');
+    sinopse.textContent = t.sinopse || t.descricao || '';
+    sinopse.hidden = !sinopse.textContent;
+
+    const tags = $('#ficha-tags');
+    tags.replaceChildren();
+    for (const tag of t.tags || []) tags.append(elemento('span', 'chip', tag));
 
     const estrela = $('#btn-ficha-favorito');
-    estrela.textContent = '☆ Favoritar';
-    estrela.onclick = () => favoritarDaFicha(t, estrela);
+    marcarEstrela(estrela, listaAtual === 'favoritos');
+    estrela.onclick = () => favoritar(t.chave, t.item_referencia, estrela);
 
-    const meta = $('#ficha-meta');
-    meta.replaceChildren();
-    const partes = [];
-    if (t.titulo_alternativo) partes.push(t.titulo_alternativo);
-    if (t.ano) partes.push(String(t.ano));
-    if (t.categoria) partes.push(t.categoria);
-    if (t.nota_imdb) partes.push(`★ ${t.nota_imdb}`);
-    meta.append(elemento('div', 'meta', partes.join(' · ')));
-    if (t.tags && t.tags.length) {
-        const chips = elemento('div', 'chips');
-        for (const tag of t.tags) chips.append(elemento('span', 'chip', tag));
-        meta.append(chips);
-    }
-
-    // A ficha tecnica e um objeto rotulo -> valor ja formatado: as chaves
-    // variam por item e podem mudar sem aviso. Listamos como veio.
-    const tabela = $('#ficha-tecnica');
-    tabela.replaceChildren();
-    for (const [rotulo, valor] of Object.entries(t.ficha_tecnica || {})) {
-        const linha = document.createElement('tr');
-        linha.append(elemento('th', null, rotulo));
-        linha.append(elemento('td', null, String(valor)));
-        tabela.append(linha);
-    }
-    tabela.hidden = tabela.childElementCount === 0;
-
-    const lista = $('#ficha-opcoes');
-    lista.replaceChildren();
-    for (const opcao of t.opcoes || []) lista.append(linhaDeOpcao(opcao));
-    if (!(t.opcoes || []).length) {
-        lista.append(elemento('p', 'vazio-inline', 'Este título ainda não tem arquivo para baixar.'));
-    }
-
-    const faltantes = $('#ficha-faltantes');
-    faltantes.replaceChildren();
-    const semArquivo = t.faltantes || [];
-    faltantes.hidden = semArquivo.length === 0;
-    if (semArquivo.length) {
-        faltantes.append(elemento('h3', null, 'Ainda não chegaram'));
-        for (const f of semArquivo) {
-            faltantes.append(elemento('div', 'faltante', f.rotulo || f.nome || String(f.id ?? '')));
-        }
-    }
+    renderOpcoesDaFicha(t);
+    renderFaltantes(t);
 }
 
-async function favoritarDaFicha(t, botao) {
-    await favoritar(t.chave, t.item_referencia || (t.opcoes && t.opcoes[0] && t.opcoes[0].id), botao);
-    const ligado = botao.textContent === '★';
-    botao.textContent = ligado ? '★ Nos favoritos' : '☆ Favoritar';
+function renderOpcoesDaFicha(t) {
+    const alvo = $('#ficha-opcoes');
+    alvo.replaceChildren();
+
+    const opcoes = t.opcoes || [];
+    const temporadas = agruparPorTemporada(opcoes);
+    const porTemporada = temporadas.some((s) => s.numero !== null);
+
+    const titulo = $('#titulo-opcoes');
+    const conta = $('#conta-opcoes');
+    const nota = $('#nota-opcoes');
+
+    if (!opcoes.length) {
+        titulo.textContent = 'Opções de download';
+        conta.textContent = '';
+        nota.textContent = '';
+        alvo.append(elemento('p', 'vazio-inline', 'Este título ainda não tem arquivo para baixar.'));
+        return;
+    }
+
+    if (porTemporada) {
+        // "Temporadas — 3 temporadas · 8 arquivos", como no site
+        titulo.textContent = 'Temporadas';
+        conta.textContent =
+            `${temporadas.length} ${temporadas.length === 1 ? 'temporada' : 'temporadas'} · ` +
+            `${opcoes.length} ${opcoes.length === 1 ? 'arquivo' : 'arquivos'}`;
+        const porEpisodio = opcoes.some((o) => o.episodio !== null);
+        nota.textContent = porEpisodio ? 'o download é por episódio' : 'a temporada vem inteira';
+
+        temporadas.forEach((temporada, indice) => {
+            alvo.append(blocoDeTemporada(temporada, indice === 0));
+        });
+        return;
+    }
+
+    titulo.textContent = 'Opções de download';
+    conta.textContent = `${opcoes.length} ${opcoes.length === 1 ? 'disponível' : 'disponíveis'}`;
+    nota.textContent = t.ficha_tecnica ? 'clique numa opção para ver a ficha técnica' : '';
+    for (const opcao of opcoes) alvo.append(linhaDeOpcao(opcao, t));
 }
 
-function linhaDeOpcao(opcao) {
+/** Um accordion de temporada. A mais recente nasce aberta, como no site. */
+function blocoDeTemporada(temporada, aberta) {
+    const caixa = document.createElement('details');
+    caixa.className = 'temporada';
+    caixa.open = !!aberta;
+
+    const cabeca = document.createElement('summary');
+    cabeca.className = 'temporada-cabeca';
+    cabeca.append(elemento('span', 'seta', '▸'));
+    cabeca.append(
+        elemento('b', null, temporada.numero === null ? 'Avulsos' : `Temporada ${temporada.numero}`)
+    );
+    cabeca.append(elemento('span', 'temporada-resumo', resumoDaTemporada(temporada)));
+    caixa.append(cabeca);
+
+    const corpo = elemento('div', 'temporada-corpo');
+    for (const grupo of temporada.grupos) corpo.append(blocoDeEpisodio(grupo));
+    caixa.append(corpo);
+
+    return caixa;
+}
+
+/**
+ * Um episodio (ou o pacote da temporada inteira) com as suas opcoes.
+ * O cabecalho traz o tamanho e, quando ha mais de uma, quantas opcoes existem.
+ */
+function blocoDeEpisodio(grupo) {
+    const bloco = elemento('div', 'episodio');
+
+    const cabeca = elemento('div', 'episodio-cabeca');
+    cabeca.append(
+        elemento('b', null, grupo.episodio === null ? 'Temporada completa' : `Episódio ${grupo.episodio}`)
+    );
+    cabeca.append(elemento('span', null, faixaDeTamanho(grupo.opcoes)));
+    if (grupo.opcoes.length > 1) {
+        cabeca.append(elemento('span', 'conta', `${grupo.opcoes.length} opções`));
+    }
+    bloco.append(cabeca);
+
+    for (const opcao of grupo.opcoes) bloco.append(linhaDeOpcao(opcao));
+    return bloco;
+}
+
+/** "2,6 GB" ou "43,7 GB–96,5 GB", conforme o grupo tenha uma ou várias opções. */
+function faixaDeTamanho(opcoes) {
+    const tamanhos = opcoes.map((o) => o.tamanho).filter(Boolean);
+    if (!tamanhos.length) return '';
+    const ordenadas = [...opcoes]
+        .filter((o) => o.tamanho)
+        .sort((a, b) => (a.tamanho_bytes || 0) - (b.tamanho_bytes || 0));
+    const menor = ordenadas[0].tamanho;
+    const maior = ordenadas[ordenadas.length - 1].tamanho;
+    return menor === maior ? menor : `${menor}–${maior}`;
+}
+
+/**
+ * Uma linha de opcao, no mesmo desenho do site: rotulo, etiquetas, tamanho,
+ * pares e o botao de baixar. Clicar na linha abre a ficha tecnica embaixo.
+ */
+function linhaDeOpcao(opcao, titulo) {
     const linha = elemento('div', 'opcao');
 
-    const esquerda = elemento('div', 'opcao-info');
-    esquerda.append(elemento('div', 'opcao-rotulo', opcao.rotulo || `Opção ${opcao.id}`));
+    const cabeca = elemento('div', 'opcao-cabeca');
 
-    const etiquetas = elemento('div', 'chips');
-    for (const e of opcao.etiquetas || []) etiquetas.append(elemento('span', 'chip', e));
-    if (opcao.temporada) etiquetas.append(elemento('span', 'chip', `T${opcao.temporada}`));
-    if (opcao.episodio) etiquetas.append(elemento('span', 'chip', `E${opcao.episodio}`));
-    esquerda.append(etiquetas);
+    const selecionar = elemento('button', 'opcao-selecionar');
+    selecionar.type = 'button';
+    selecionar.append(elemento('span', 'radio'));
+    selecionar.append(elemento('span', 'opcao-rotulo', opcao.rotulo || `Opção ${opcao.id}`));
 
-    const detalhes = [];
-    if (opcao.tamanho) detalhes.push(opcao.tamanho);
-    if (typeof opcao.seeders === 'number') detalhes.push(`${opcao.seeders} seeds`);
-    esquerda.append(elemento('div', 'meta', detalhes.join(' · ')));
-    linha.append(esquerda);
-
-    const direita = elemento('div', 'opcao-acoes');
-    const preco = elemento(
-        'span',
-        `preco${opcao.free ? ' free' : ''}`,
-        opcao.free ? 'free' : `◆ ${opcao.preco}`
+    const etiquetas = elemento('span', 'opcao-etiquetas');
+    etiquetas.append(
+        opcao.free
+            ? elemento('span', 'etiqueta-free', 'free')
+            : elemento('span', 'etiqueta-preco', `${opcao.preco} ◆`)
     );
-    direita.append(preco);
+    for (const e of opcao.etiquetas || []) etiquetas.append(elemento('span', 'etiqueta-tec', e));
+    selecionar.append(etiquetas);
 
-    const baixar = elemento('button', 'botao', 'Baixar');
+    selecionar.append(elemento('span', 'opcao-tamanho', opcao.tamanho || ''));
+
+    const pares = elemento('span', 'opcao-pares');
+    pares.title = `${opcao.seeders || 0} seeders`;
+    pares.append(elemento('b', null, `▲${opcao.seeders ?? 0}`));
+    selecionar.append(pares);
+
+    cabeca.append(selecionar);
+
+    const baixar = elemento('button', 'botao baixar', '↓ Baixar');
     baixar.addEventListener('click', () => baixarOpcao(opcao, baixar));
-    direita.append(baixar);
+    cabeca.append(baixar);
 
-    linha.append(direita);
+    linha.append(cabeca);
+
+    // A API devolve UMA ficha tecnica por titulo (nao por opcao). Ela abre
+    // embaixo da opcao escolhida, como no site.
+    const ficha = titulo && titulo.ficha_tecnica;
+    if (ficha && Object.keys(ficha).length) {
+        const tecnica = elemento('div', 'opcao-tecnica');
+        for (const [rotulo, valor] of Object.entries(ficha)) {
+            const par = elemento('div', null);
+            par.append(elemento('span', null, rotulo));
+            par.append(elemento('b', null, String(valor)));
+            tecnica.append(par);
+        }
+        linha.append(tecnica);
+
+        selecionar.addEventListener('click', () => {
+            const abrindo = opcaoAberta !== opcao.id;
+            for (const outra of $$('#ficha-opcoes .opcao')) outra.classList.remove('aberta');
+            linha.classList.toggle('aberta', abrindo);
+            opcaoAberta = abrindo ? opcao.id : null;
+        });
+    } else {
+        selecionar.addEventListener('click', () => baixar.focus());
+    }
+
     return linha;
 }
 
 /**
- * Baixar uma opcao.
- *
- * O GET nunca debita: se for free, o arquivo vem na hora. Se custar gema, a
- * API devolve preco e saldo e NADA foi cobrado -- mostramos a confirmacao e so
- * entao chamamos o POST, que e o unico que cobra.
+ * "Sem arquivo": itens que existem no catálogo do tracker e ainda não têm
+ * arquivo. Pedir é coisa do site -- a API não expõe rota para isso.
  */
+function renderFaltantes(t) {
+    const alvo = $('#ficha-faltantes');
+    alvo.replaceChildren();
+
+    const faltantes = t.faltantes || [];
+    $('#bloco-faltantes').hidden = faltantes.length === 0;
+    $('#conta-faltantes').textContent = faltantes.length
+        ? `${faltantes.length} ${faltantes.length === 1 ? 'item' : 'itens'} no catálogo do tracker`
+        : '';
+
+    for (const f of faltantes) {
+        const linha = elemento('div', 'faltante');
+        linha.append(elemento('b', null, f.nome || `Item ${f.id}`));
+        if (f.rotulo) linha.append(elemento('span', 'etiqueta-tec', f.rotulo));
+        linha.append(elemento('span', 'sem-arquivo-aviso', 'sem arquivo'));
+        alvo.append(linha);
+    }
+}
+
+// ---------------------------------------------------------------- download
+//
+// O GET nunca debita: se a opcao for free o arquivo vem na hora. Se custar
+// gema, a API devolve preco e saldo e NADA foi cobrado -- mostramos a
+// confirmacao e so entao chamamos o POST, que e o unico que cobra.
+
+const MENSAGENS_DE_DOWNLOAD = {
+    sem_passkey:
+        'Esta conta não tem passkey, então nenhum download sai — nem o free. Só o administrador do site resolve.',
+    arquivo_indisponivel:
+        'O arquivo não abriu no armazenamento do site. Tente mais tarde — nada foi cobrado.',
+    sem_saldo: 'Gemas insuficientes para esta opção.',
+    opcao_free: 'Esta opção não cobra nada — tente baixar de novo.',
+    nao_encontrado: 'Essa opção não existe mais para esta conta.',
+};
+
+function mensagemDeDownload(r) {
+    return MENSAGENS_DE_DOWNLOAD[r.erro] || r.mensagem || 'Não consegui baixar.';
+}
+
 async function baixarOpcao(opcao, botao) {
     const rotulo = botao.textContent;
     botao.disabled = true;
@@ -705,25 +965,11 @@ async function baixarOpcao(opcao, botao) {
     }
 }
 
-const MENSAGENS_DE_DOWNLOAD = {
-    sem_passkey:
-        'Esta conta não tem passkey, então nenhum download sai — nem o free. Só o administrador do site resolve.',
-    arquivo_indisponivel:
-        'O arquivo não abriu no armazenamento do site. Tente mais tarde — nada foi cobrado.',
-    sem_saldo: 'Gemas insuficientes para esta opção.',
-    opcao_free: 'Esta opção não cobra nada — tente baixar de novo.',
-    nao_encontrado: 'Essa opção não existe mais para esta conta.',
-};
-
-function mensagemDeDownload(r) {
-    return MENSAGENS_DE_DOWNLOAD[r.erro] || r.mensagem || 'Não consegui baixar.';
-}
-
 let resolverConfirmacao = null;
 
-function pedirConfirmacao({ preco, saldo }, opcao, aviso_ = '') {
+function pedirConfirmacao({ preco, saldo }, opcao, avisoExtra = '') {
     $('#confirmacao-texto').textContent =
-        `${aviso_ ? aviso_ + ' ' : ''}"${opcao.rotulo || 'Esta opção'}" custa gemas. ` +
+        `${avisoExtra ? avisoExtra + ' ' : ''}"${opcao.rotulo || 'Esta opção'}" custa gemas. ` +
         'Confirme para baixar.';
     $('#confirmacao-preco').textContent = `◆ ${preco}`;
     $('#confirmacao-saldo').textContent = `◆ ${saldo}`;

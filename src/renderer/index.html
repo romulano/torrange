@@ -159,12 +159,14 @@
                 <button class="botao secundario" id="btn-limpar-filtros">Limpar</button>
             </div>
 
-            <div class="grade" id="grade-acervo"></div>
+            <div class="resumo-acervo" id="resumo-acervo"></div>
+
+            <div class="grade-acervo" id="grade-acervo"></div>
             <p class="vazio" id="vazio-acervo">Nada encontrado.</p>
 
             <div class="sem-arquivo" id="bloco-sem-arquivo" hidden>
                 <h2>Encontrados no catálogo, ainda sem arquivo</h2>
-                <div class="grade compacta" id="grade-sem-arquivo"></div>
+                <div class="grade-acervo" id="grade-sem-arquivo"></div>
             </div>
 
             <div class="paginacao" id="paginacao-acervo" hidden>
@@ -389,24 +391,45 @@
 <!-- ------------------------------------------------- ficha de um título -->
 <div class="modal" id="ficha" hidden>
     <div class="modal-fundo" id="ficha-fundo"></div>
-    <div class="modal-caixa larga" role="dialog" aria-modal="true" aria-labelledby="ficha-titulo">
-        <h2 id="ficha-titulo">Título</h2>
-        <div class="modal-corpo">
-            <div class="ficha-capa">
-                <div class="previa" id="ficha-previa"></div>
-                <button class="botao secundario" id="btn-ficha-favorito">☆ Favoritar</button>
-            </div>
-            <div class="modal-campos">
-                <div class="ficha-meta" id="ficha-meta"></div>
-                <table class="ficha-tecnica" id="ficha-tecnica"></table>
-                <h3>Opções de download</h3>
-                <div class="opcoes" id="ficha-opcoes"></div>
-                <div class="faltantes" id="ficha-faltantes" hidden></div>
-            </div>
-        </div>
-        <div class="modal-rodape">
-            <span class="espaco"></span>
-            <button class="botao secundario" id="btn-ficha-fechar">Fechar</button>
+    <div class="ficha-caixa" role="dialog" aria-modal="true" aria-labelledby="ficha-titulo">
+        <button class="ficha-fechar" id="btn-ficha-fechar" title="Fechar" aria-label="Fechar">✕</button>
+
+        <!-- capa borrada ao fundo, como no site -->
+        <div class="ficha-fundo-capa" id="ficha-fundo-capa"></div>
+
+        <div class="ficha-rolagem">
+            <header class="ficha-topo">
+                <div class="ficha-poster" id="ficha-poster"></div>
+                <div class="ficha-identidade">
+                    <div class="ficha-linha-titulo">
+                        <h2 id="ficha-titulo">Título</h2>
+                        <button class="estrela" id="btn-ficha-favorito" title="Favoritar"
+                                aria-label="Favoritar">☆</button>
+                    </div>
+                    <p class="ficha-subtitulo" id="ficha-subtitulo"></p>
+                    <div class="ficha-chips" id="ficha-chips"></div>
+                    <p class="ficha-sinopse" id="ficha-sinopse" hidden></p>
+                    <div class="chips" id="ficha-tags"></div>
+                </div>
+            </header>
+
+            <section class="ficha-bloco" id="bloco-opcoes">
+                <div class="ficha-bloco-cabeca">
+                    <h3 id="titulo-opcoes">Opções de download</h3>
+                    <span class="conta" id="conta-opcoes"></span>
+                    <span class="nota" id="nota-opcoes"></span>
+                </div>
+                <div id="ficha-opcoes"></div>
+            </section>
+
+            <section class="ficha-bloco" id="bloco-faltantes" hidden>
+                <div class="ficha-bloco-cabeca">
+                    <h3 class="alerta">Sem arquivo</h3>
+                    <span class="conta" id="conta-faltantes"></span>
+                    <span class="nota">o app não pede arquivo — isso é no site</span>
+                </div>
+                <div id="ficha-faltantes"></div>
+            </section>
         </div>
     </div>
 </div>

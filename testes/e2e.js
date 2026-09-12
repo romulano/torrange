@@ -234,7 +234,7 @@ const estadoDoServidor = () => pegarJson(PORTA_SITE, '/_teste/estado');
         for (let i = 0; i < 24; i++) {
             await espera(1000);
             aprovado = await ui.avaliar(
-                `!document.querySelector('#acervo-conteudo').hidden && document.querySelectorAll('#grade-acervo .cartao').length > 0`
+                `!document.querySelector('#acervo-conteudo').hidden && document.querySelectorAll('#grade-acervo .cartao-acervo').length > 0`
             );
             if (aprovado) break;
         }
@@ -249,12 +249,20 @@ const estadoDoServidor = () => pegarJson(PORTA_SITE, '/_teste/estado');
 
         const grade = await ui.avaliar(`
             ({
-                cartoes: document.querySelectorAll('#grade-acervo .cartao').length,
-                primeiro: (document.querySelector('#grade-acervo .cartao h3') || {}).textContent,
+                cartoes: document.querySelectorAll('#grade-acervo .cartao-acervo').length,
+                primeiro: (document.querySelector('#grade-acervo .cartao-acervo h3') || {}).textContent,
+                temPoster: !!document.querySelector('#grade-acervo .cartao-acervo .poster'),
+                temSeloRes: !!document.querySelector('#grade-acervo .cartao-acervo .selo-res'),
+                temEstrela: !!document.querySelector('#grade-acervo .cartao-acervo .estrela'),
                 gemas: document.querySelector('#gemas-barra').textContent,
                 conta: document.querySelector('#conta-nome').textContent,
             })
         `);
+        checar(
+            'o cartão tem o desenho do site: pôster, selo de resolução e estrela',
+            grade.temPoster && grade.temSeloRes && grade.temEstrela,
+            JSON.stringify(grade)
+        );
         checar('o acervo veio pela API', grade.cartoes >= 2, `${grade.cartoes} cartões`);
         checar('o card traz o título', /Duna/.test(grade.primeiro || ''), grade.primeiro);
         checar('a barra mostra o saldo de gemas', grade.gemas === '◆ 5', grade.gemas);
@@ -265,9 +273,9 @@ const estadoDoServidor = () => pegarJson(PORTA_SITE, '/_teste/estado');
 
         await ui.avaliar(`
             (async () => {
-                const cartoes = Array.from(document.querySelectorAll('#grade-acervo .cartao'));
+                const cartoes = Array.from(document.querySelectorAll('#grade-acervo .cartao-acervo'));
                 const alvo = cartoes.find((c) => /Duna/.test(c.textContent));
-                alvo.querySelector('.rodape .botao').click();
+                alvo.click();
                 await new Promise((r) => setTimeout(r, 1200));
             })()
         `);
@@ -276,23 +284,55 @@ const estadoDoServidor = () => pegarJson(PORTA_SITE, '/_teste/estado');
             ({
                 aberta: !document.querySelector('#ficha').hidden,
                 titulo: document.querySelector('#ficha-titulo').textContent,
+                subtitulo: document.querySelector('#ficha-subtitulo').textContent,
+                cabecalho: document.querySelector('#titulo-opcoes').textContent,
+                conta: document.querySelector('#conta-opcoes').textContent,
                 opcoes: document.querySelectorAll('#ficha-opcoes .opcao').length,
-                precos: Array.from(document.querySelectorAll('#ficha-opcoes .preco')).map((e) => e.textContent),
-                fichaTecnica: document.querySelectorAll('#ficha-tecnica tr').length,
+                temTemporada: !!document.querySelector('#ficha-opcoes .temporada'),
+                etiquetas: Array.from(document.querySelectorAll('#ficha-opcoes .etiqueta-free, #ficha-opcoes .etiqueta-preco')).map((e) => e.textContent),
+                chips: Array.from(document.querySelectorAll('#ficha-chips > *')).map((e) => e.textContent),
             })
         `);
         checar('a ficha do título abre com as opções', ficha.aberta && ficha.opcoes === 2, JSON.stringify(ficha));
+        checar(
+            'um filme mostra "Opções de download", sem temporadas',
+            ficha.cabecalho === 'Opções de download' && !ficha.temTemporada && /2 disponíveis/.test(ficha.conta),
+            `${ficha.cabecalho} · ${ficha.conta}`
+        );
         checar('a ficha mostra o que é free e o que custa gema',
-            ficha.precos.includes('free') && ficha.precos.some((p) => /◆/.test(p)),
-            ficha.precos.join(' | '));
-        checar('a ficha técnica é listada como veio', ficha.fichaTecnica >= 4, `${ficha.fichaTecnica} linhas`);
+            ficha.etiquetas.includes('free') && ficha.etiquetas.some((p) => /◆/.test(p)),
+            ficha.etiquetas.join(' | '));
+        checar(
+            'o cabeçalho traz nota, categoria e faixa de tamanho, como no site',
+            ficha.chips.some((c) => /IMDb/.test(c)) && ficha.chips.some((c) => /filme/.test(c)),
+            ficha.chips.join(' | ')
+        );
+
+        // a ficha técnica abre ao escolher uma opção
+        const tecnica = await ui.avaliar(`
+            (async () => {
+                document.querySelector('#ficha-opcoes .opcao .opcao-selecionar').click();
+                await new Promise((r) => setTimeout(r, 200));
+                const aberta = document.querySelector('#ficha-opcoes .opcao.aberta');
+                return {
+                    abriu: !!aberta,
+                    campos: aberta ? aberta.querySelectorAll('.opcao-tecnica > div').length : 0,
+                    visivel: aberta ? getComputedStyle(aberta.querySelector('.opcao-tecnica')).display : null,
+                };
+            })()
+        `);
+        checar(
+            'escolher uma opção abre a ficha técnica embaixo dela',
+            tecnica.abriu && tecnica.campos >= 4 && tecnica.visivel === 'grid',
+            JSON.stringify(tecnica)
+        );
 
         // baixar a opcao free
         await ui.avaliar(`
             (async () => {
                 const opcoes = Array.from(document.querySelectorAll('#ficha-opcoes .opcao'));
-                const free = opcoes.find((o) => o.querySelector('.preco.free'));
-                free.querySelector('.botao').click();
+                const free = opcoes.find((o) => o.querySelector('.etiqueta-free'));
+                free.querySelector('.botao.baixar').click();
                 await new Promise((r) => setTimeout(r, 1500));
             })()
         `);
@@ -343,13 +383,13 @@ const estadoDoServidor = () => pegarJson(PORTA_SITE, '/_teste/estado');
         // ------------------------------------------------------ requisito 8
         await ui.avaliar(`
             (async () => {
-                const cartoes = Array.from(document.querySelectorAll('#grade-acervo .cartao'));
+                const cartoes = Array.from(document.querySelectorAll('#grade-acervo .cartao-acervo'));
                 const alvo = cartoes.find((c) => /Duna/.test(c.textContent));
-                alvo.querySelector('.rodape .botao').click();
+                alvo.click();
                 await new Promise((r) => setTimeout(r, 1200));
                 const opcoes = Array.from(document.querySelectorAll('#ficha-opcoes .opcao'));
-                const paga = opcoes.find((o) => !o.querySelector('.preco.free'));
-                paga.querySelector('.botao').click();
+                const paga = opcoes.find((o) => o.querySelector('.etiqueta-preco'));
+                paga.querySelector('.botao.baixar').click();
                 await new Promise((r) => setTimeout(r, 1500));
             })()
         `);
@@ -399,6 +439,101 @@ const estadoDoServidor = () => pegarJson(PORTA_SITE, '/_teste/estado');
         const saldoNaTela = await ui.avaliar(`document.querySelector('#gemas-barra').textContent`);
         checar('a barra já mostra o saldo novo', saldoNaTela === '◆ 3', saldoNaTela);
 
+        // ------------------------------------------- séries: temporadas e episódios
+        // O desenho tem de ser o mesmo do site: um accordion por temporada, a
+        // mais recente aberta, com "Episódio N" ou "Temporada completa" dentro.
+        const serie = await ui.avaliar(`
+            (async () => {
+                document.querySelector('#btn-ficha-fechar').click();
+                await new Promise((r) => setTimeout(r, 300));
+                const cartoes = Array.from(document.querySelectorAll('#grade-acervo .cartao-acervo'));
+                const alvo = cartoes.find((c) => /Série de Teste/.test(c.textContent));
+                alvo.click();
+                await new Promise((r) => setTimeout(r, 1200));
+
+                const temporadas = Array.from(document.querySelectorAll('#ficha-opcoes .temporada'));
+                return {
+                    cabecalho: document.querySelector('#titulo-opcoes').textContent,
+                    conta: document.querySelector('#conta-opcoes').textContent,
+                    nota: document.querySelector('#nota-opcoes').textContent,
+                    quantas: temporadas.length,
+                    nomes: temporadas.map((t) => t.querySelector('b').textContent),
+                    resumos: temporadas.map((t) => t.querySelector('.temporada-resumo').textContent),
+                    abertas: temporadas.map((t) => t.open),
+                    gruposDaPrimeira: Array.from(
+                        temporadas[0].querySelectorAll('.episodio-cabeca b')
+                    ).map((b) => b.textContent),
+                    gruposDaSegunda: Array.from(
+                        temporadas[1].querySelectorAll('.episodio-cabeca b')
+                    ).map((b) => b.textContent),
+                    faixaDoPacote: (temporadas[1].querySelector('.episodio-cabeca span') || {}).textContent,
+                    faltantes: document.querySelectorAll('#ficha-faltantes .faltante').length,
+                    faltanteEscondido: document.querySelector('#bloco-faltantes').hidden,
+                };
+            })()
+        `);
+
+        checar(
+            'uma série mostra "Temporadas" no lugar de "Opções de download"',
+            serie.cabecalho === 'Temporadas',
+            serie.cabecalho
+        );
+        checar(
+            'o cabeçalho conta temporadas e arquivos, como no site',
+            /2 temporadas · 4 arquivos/.test(serie.conta),
+            serie.conta
+        );
+        checar(
+            'as temporadas vêm da mais nova para a mais velha',
+            serie.nomes.join(' | ') === 'Temporada 2 | Temporada 1',
+            serie.nomes.join(' | ')
+        );
+        checar(
+            'só a temporada mais recente nasce aberta',
+            serie.abertas[0] === true && serie.abertas[1] === false,
+            JSON.stringify(serie.abertas)
+        );
+        checar(
+            'o resumo de cada temporada diz episódios ou temporada completa',
+            serie.resumos.join(' | ') === '2 episódios | temporada completa',
+            serie.resumos.join(' | ')
+        );
+        checar(
+            'a temporada com episódios lista cada episódio, do último para o primeiro',
+            serie.gruposDaPrimeira.join(' | ') === 'Episódio 2 | Episódio 1',
+            serie.gruposDaPrimeira.join(' | ')
+        );
+        checar(
+            'a temporada em pacote aparece como "Temporada completa"',
+            serie.gruposDaSegunda.join(' | ') === 'Temporada completa',
+            serie.gruposDaSegunda.join(' | ')
+        );
+        checar(
+            'o pacote mostra a faixa de tamanho das suas opções',
+            serie.faixaDoPacote === '8,0 GB–20,0 GB',
+            serie.faixaDoPacote
+        );
+        checar(
+            'os itens sem arquivo aparecem em bloco próprio',
+            !serie.faltanteEscondido && serie.faltantes === 1,
+            `${serie.faltantes} faltante(s)`
+        );
+
+        // baixar um episódio de dentro da temporada
+        await ui.avaliar(`
+            (async () => {
+                const temporada = document.querySelector('#ficha-opcoes .temporada');
+                temporada.querySelector('.opcao .botao.baixar').click();
+                await new Promise((r) => setTimeout(r, 1500));
+            })()
+        `);
+        fila = await esperarFila(fila.length + 1);
+        checar(
+            'dá para baixar um episódio direto da temporada',
+            fila.some((t) => /Série de Teste/.test(t.name)),
+            `na fila: ${fila.map((t) => t.name).join(', ')}`
+        );
+
         // ------------------------------ entrada por endereco na aba Downloads
         await ui.avaliar(
             `window.torrange.fila.adicionarUrl(${JSON.stringify(`${BASE}/baixar/4624732`)})`
@@ -447,8 +582,8 @@ const estadoDoServidor = () => pegarJson(PORTA_SITE, '/_teste/estado');
             (async () => {
                 document.querySelector('.sub-aba[data-lista="acervo"]').click();
                 await new Promise((r) => setTimeout(r, 900));
-                const cartao = document.querySelector('#grade-acervo .cartao');
-                const estrela = Array.from(cartao.querySelectorAll('.rodape .botao')).pop();
+                const cartao = document.querySelector('#grade-acervo .cartao-acervo');
+                const estrela = cartao.querySelector('.estrela');
                 estrela.click();
                 await new Promise((r) => setTimeout(r, 900));
                 return estrela.textContent;
@@ -460,7 +595,7 @@ const estadoDoServidor = () => pegarJson(PORTA_SITE, '/_teste/estado');
             (async () => {
                 document.querySelector('.sub-aba[data-lista="favoritos"]').click();
                 await new Promise((r) => setTimeout(r, 1200));
-                return document.querySelectorAll('#grade-acervo .cartao').length;
+                return document.querySelectorAll('#grade-acervo .cartao-acervo').length;
             })()
         `);
         checar('a aba Favoritos lista o que foi marcado', listaFavoritos === 1, `${listaFavoritos} cartão(ões)`);
@@ -469,7 +604,7 @@ const estadoDoServidor = () => pegarJson(PORTA_SITE, '/_teste/estado');
             (async () => {
                 document.querySelector('.sub-aba[data-lista="baixados"]').click();
                 await new Promise((r) => setTimeout(r, 1200));
-                return document.querySelectorAll('#grade-acervo .cartao').length;
+                return document.querySelectorAll('#grade-acervo .cartao-acervo').length;
             })()
         `);
         checar('a aba Já baixados traz o histórico da conta', listaBaixados >= 2, `${listaBaixados} registro(s)`);

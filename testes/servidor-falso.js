@@ -64,7 +64,11 @@ const TOKEN_VALIDO = process.env.TESTE_TOKEN || 'a'.repeat(50) + 'B'.repeat(25) 
 const OPCOES = {
     1: { id: 1, rotulo: 'Full HD', etiquetas: ['MKV', 'Nacional', 'H.264'], tamanho_bytes: 4294967296, tamanho: '4,0 GB', seeders: 10, temporada: null, episodio: null, free: true, preco: 0, titulo: 'g1' },
     4: { id: 4, rotulo: '4K', etiquetas: ['MKV', 'Dual Áudio', 'H.265'], tamanho_bytes: 34359738368, tamanho: '32,0 GB', seeders: 4, temporada: null, episodio: null, free: false, preco: 2, titulo: 'g1' },
-    7: { id: 7, rotulo: 'HD', etiquetas: ['MP4'], tamanho_bytes: 2147483648, tamanho: '2,0 GB', seeders: 2, temporada: 1, episodio: 1, free: true, preco: 0, titulo: 's45' },
+    7: { id: 7, rotulo: 'Full HD', etiquetas: ['MKV', 'Legendado', 'H.264'], tamanho_bytes: 2791728742, tamanho: '2,6 GB', seeders: 28, temporada: 2, episodio: 2, free: true, preco: 0, titulo: 's45' },
+    8: { id: 8, rotulo: 'Full HD', etiquetas: ['MKV', 'Legendado', 'H.264'], tamanho_bytes: 2791728742, tamanho: '2,6 GB', seeders: 24, temporada: 2, episodio: 1, free: true, preco: 0, titulo: 's45' },
+    // a temporada 1 vem em pacote (sem episodio), e em duas resolucoes
+    9: { id: 9, rotulo: 'Full HD', etiquetas: ['MKV', 'Dual Áudio', 'H.264'], tamanho_bytes: 8589934592, tamanho: '8,0 GB', seeders: 12, temporada: 1, episodio: null, free: true, preco: 0, titulo: 's45' },
+    10: { id: 10, rotulo: '4K', etiquetas: ['MKV', 'Dual Áudio', 'H.265'], tamanho_bytes: 21474836480, tamanho: '20,0 GB', seeders: 5, temporada: 1, episodio: null, free: false, preco: 2, titulo: 's45' },
 };
 
 const TITULOS = {
@@ -101,14 +105,19 @@ const TITULOS = {
         tags: ['comédia'],
         nota_imdb: null,
         serie: true,
-        total_opcoes: 1,
-        melhor_resolucao: 'HD',
-        faixa_de_tamanho: '2,0 GB',
+        total_opcoes: 4,
+        melhor_resolucao: '4K',
+        faixa_de_tamanho: '2,6 GB–20,0 GB',
         nada_para_baixar: false,
         item_referencia: 7,
-        ficha_tecnica: { Formato: 'MP4', 'Resolução': 'HD' },
-        opcoes: [7],
-        faltantes: [{ id: 99, rotulo: 'Temporada 2' }],
+        ficha_tecnica: {
+            Formato: 'MKV',
+            'Resolução': 'Full HD',
+            'Áudio': 'Legendado',
+            'Codec de Vídeo': 'H.264',
+        },
+        opcoes: [7, 8, 9, 10],
+        faltantes: [{ id: 4721858, nome: 'Série de Teste - S02E03 [2021]', rotulo: 'Full HD' }],
     },
 };
 
@@ -148,6 +157,12 @@ function responder(res, status, corpo, tipo = 'application/json; charset=utf-8',
     const dados = Buffer.isBuffer(corpo) ? corpo : Buffer.from(JSON.stringify(corpo));
     res.writeHead(status, Object.assign({ 'Content-Type': tipo, 'Content-Length': dados.length }, extras));
     res.end(dados);
+}
+
+/** attachment com o nome em ASCII e a forma estendida para acentos. */
+function disposicao(nome) {
+    const simples = nome.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+    return `attachment; filename="${simples}"; filename*=UTF-8''${encodeURIComponent(nome)}`;
 }
 
 function recusar(res, status, erro, mensagem, extras = {}) {
@@ -456,7 +471,10 @@ async function tratarApi(req, res, rota, url) {
                 opcao: { id: opcao.id, rotulo: opcao.rotulo, tamanho: opcao.tamanho },
             });
             responder(res, 200, arquivo, 'application/x-bittorrent', {
-                'Content-Disposition': `attachment; filename="${nome}"`,
+                // O nome tem acento, e o Node recusa nao-ASCII em cabecalho.
+                // A forma estendida do RFC 5987 e a que o site usa de verdade
+                // -- e de quebra exercita o parser do cliente.
+                'Content-Disposition': disposicao(nome),
             });
         };
 
@@ -621,7 +639,7 @@ const servidor = http.createServer(async (req, res) => {
         const conteudo = Buffer.alloc(200000, `conteudo-de-teste-${cru[1]}`);
         const { arquivo } = criarTorrent(`Filme de Teste ${cru[1]}.mkv`, conteudo, anuncio);
         responder(res, 200, arquivo, 'application/x-bittorrent', {
-            'Content-Disposition': `attachment; filename="Filme de Teste ${cru[1]}.torrent"`,
+            'Content-Disposition': disposicao(`Filme de Teste ${cru[1]}.torrent`),
         });
         return;
     }
