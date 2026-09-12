@@ -24,8 +24,8 @@ Os instaladores estão publicados em
 | Windows (portátil) | `Torrange-1.1.0-win.zip` |
 | Linux (Debian/Ubuntu) | `torrange_1.1.0_amd64.deb` |
 | Linux (universal) | `Torrange-1.1.0.AppImage` |
-| macOS (Apple Silicon) | `Torrange-1.1.0-arm64.dmg` |
-| macOS (Intel) | `Torrange-1.1.0-x64.dmg` |
+| macOS (Apple Silicon) | `Torrange-1.1.0-arm64-mac.zip` |
+| macOS (Intel) | `Torrange-1.1.0-mac.zip` |
 
 Nos pacotes de Windows e Linux o Electron, o qBittorrent e o mpv vão dentro:
 não é preciso instalar Node, npm nem o qBittorrent à parte. **No macOS é
@@ -334,9 +334,26 @@ resources/bin/mac/qbittorrent/qbittorrent-nox
 resources/bin/mac/mpv/mpv.app/Contents/MacOS/mpv
 ```
 
-O pacote **não é assinado nem notarizado** (isso exige um certificado de
-desenvolvedor da Apple): na primeira abertura o macOS avisa — clique com o botão
-direito no app → **Abrir** → **Abrir**.
+O pacote é **assinado ad-hoc**, mas **não notarizado** (notarizar exige um
+certificado de desenvolvedor da Apple): na primeira abertura o macOS avisa —
+clique com o botão direito no app → **Abrir** → **Abrir**. Descompacte o `.zip`
+e arraste o `Torrange.app` para a pasta *Aplicativos*.
+
+### Por que o macOS sai em `.zip` e não em `.dmg`
+
+O `.dmg` é montado com o `hdiutil`, que só existe no macOS. O `.zip`, esse sim,
+dá para gerar daqui — mas com dois cuidados que o `electron-builder` não toma
+sozinho fora do Mac, e que o `scripts/empacotar-mac.sh` resolve:
+
+- **os links simbólicos.** Um `.framework` do macOS é feito deles
+  (`Electron Framework` → `Versions/Current/Electron Framework`). O zip do
+  electron-builder os desreferencia: o pacote deixa de ser um framework válido
+  e o binário de 200 MB é gravado três vezes (353 MB contra 122 MB). O script
+  zipa com `zip -y`, que guarda symlink como symlink.
+- **a assinatura.** Fora do macOS o electron-builder pula a assinatura, e um
+  binário **arm64 sem nenhuma assinatura é morto pelo kernel** ao abrir — no
+  Apple Silicon nem a ad-hoc é opcional. O script assina ad-hoc com o
+  [rcodesign](https://github.com/indygreg/apple-platform-rs), que roda no Linux.
 
 ## Como buildar
 
@@ -357,11 +374,16 @@ Os instaladores saem em `dist/`:
 
 Para gerar só uma plataforma: `ALVOS="--linux" ./build.sh` ou `ALVOS="--win" ./build.sh`.
 
-**macOS** — precisa rodar **num Mac**: o `.dmg` é montado com o `hdiutil`, que
-só existe lá, e não há como gerar de dentro do Docker.
+**macOS** — os `.zip` (Intel e Apple Silicon) saem do Linux, com Docker:
 
 ```bash
-npm run dist:mac
+npm run dist:mac-zip
+```
+
+Para o `.dmg` é preciso um Mac (o `hdiutil` só existe lá):
+
+```bash
+npm run dist:mac      # rode num Mac
 ```
 
 > O instalador do Windows não é assinado. Na primeira execução o SmartScreen
@@ -410,7 +432,8 @@ apagado** (a remoção usa `deleteFiles=false`).
 
 ```
 build.sh                      build de Windows e Linux no Docker
-scripts/build-mac.sh          build do macOS (roda num Mac)
+scripts/build-mac.sh          build do macOS com .dmg (roda num Mac)
+scripts/empacotar-mac.sh      .zip do macOS a partir do Linux (assina ad-hoc)
 docker/Dockerfile             imagem com Node + Wine
 scripts/fetch-binaries.sh     baixa e verifica qbittorrent-nox e mpv
 scripts/binaries.manifest     URLs e SHA256 dos binários

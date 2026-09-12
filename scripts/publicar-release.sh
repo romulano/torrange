@@ -20,7 +20,7 @@ cd "$RAIZ"
 git push --set-upstream origin main
 
 # 3. Reúne os instaladores existentes.
-#    Os do macOS só aparecem quando o build rodou num Mac (npm run dist:mac).
+#    Os .zip do macOS saem do Linux (npm run dist:mac-zip); o .dmg, só num Mac.
 ARQUIVOS=()
 for f in "Torrange-Setup-$VERSAO.exe" "Torrange-$VERSAO-win.zip" \
          "torrange_${VERSAO}_amd64.deb" "Torrange-$VERSAO.AppImage" \
@@ -64,8 +64,8 @@ direto.
 | Windows (portátil) | \`Torrange-$VERSAO-win.zip\` |
 | Linux (Debian/Ubuntu) | \`torrange_${VERSAO}_amd64.deb\` |
 | Linux (universal) | \`Torrange-$VERSAO.AppImage\` |
-| macOS (Apple Silicon) | \`Torrange-$VERSAO-arm64.dmg\` |
-| macOS (Intel) | \`Torrange-$VERSAO-x64.dmg\` |
+| macOS (Apple Silicon) | \`Torrange-$VERSAO-arm64-mac.zip\` |
+| macOS (Intel) | \`Torrange-$VERSAO-mac.zip\` |
 
 Os pacotes de Windows e Linux são autocontidos: trazem o Electron, o
 qBittorrent e o mpv dentro.
@@ -86,8 +86,9 @@ brew install mpv
 sudo port install qbittorrent-nox     # ou: nix profile install nixpkgs#qbittorrent-nox
 \`\`\`
 
-O pacote não é assinado nem notarizado: na primeira abertura, clique com o
-botão direito no app → **Abrir** → **Abrir**.
+O pacote é assinado ad-hoc, mas não notarizado: descompacte o \`.zip\`, arraste
+o \`Torrange.app\` para *Aplicativos* e, na primeira abertura, clique nele com o
+botão direito → **Abrir** → **Abrir**.
 NOTAS_FIM
 )"
 
