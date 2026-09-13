@@ -21,6 +21,7 @@
     "teste:pacote": "node testes/pacote.js",
     "teste:biblioteca": "node testes/biblioteca.js",
     "teste:interface": "node testes/interface.js",
+    "teste:ponte-android": "node android/testes/ponte.js",
     "dist:mac-zip": "bash scripts/empacotar-mac.sh"
   },
   "devDependencies": {

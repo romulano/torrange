@@ -26,6 +26,16 @@ win-unpacked/
 builder-debug.yml
 latest*.yml
 
+*.apk
+android/.gradle/
+android/build/
+android/app/build/
+# a interface dentro do APK e gerada a partir de src/renderer no build
+android/app/src/main/assets/app/
+# a chave de assinatura do APK: perde-la significa nao conseguir mais
+# ATUALIZAR o aplicativo instalado (so reinstalar do zero)
+android/chave/
+
 *.log
 
 # segredos locais (o token da conta nunca vai para o repositorio)

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    O que o aplicativo pode entregar a outro aplicativo. Só a pasta dos
+    diagnósticos: o .log é feito para ser anexado num relato de problema.
+    Nada mais da área privada sai daqui.
+-->
+<paths>
+    <files-path name="diagnosticos" path="diagnosticos/" />
+</paths>

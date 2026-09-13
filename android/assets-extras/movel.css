@@ -1,0 +1,186 @@
+/*
+ * Torrange - a mesma interface, no toque.
+ *
+ * Esta folha entra DEPOIS de styles.css e so acrescenta. A regra que seguimos
+ * aqui: nada de esconder funcao. O aplicativo de celular faz tudo o que o de
+ * desktop faz -- o que muda e o tamanho do alvo do dedo, o numero de colunas e
+ * o lugar das barras do sistema.
+ */
+
+:root {
+    /* Preenchidos pela Activity a cada mudanca de janela (ver android.js). */
+    --recorte-topo: 0px;
+    --recorte-base: 0px;
+    --recorte-esquerda: 0px;
+    --recorte-direita: 0px;
+}
+
+html, body {
+    /* Sem isto o toque no vazio "puxa" a pagina inteira e a superficie de
+       video, que e uma View de verdade, fica fora de lugar. */
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* ----------------------------------------------------------- as barras */
+
+.barra {
+    height: auto;
+    min-height: var(--barra-altura);
+    padding-top: calc(var(--recorte-topo) + 6px);
+    padding-bottom: 6px;
+    padding-left: calc(var(--recorte-esquerda) + 12px);
+    padding-right: calc(var(--recorte-direita) + 12px);
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.tela-cheia .barra { display: none; }
+
+/* As abas rolam de lado em vez de espremer o texto. */
+.abas {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+}
+.abas::-webkit-scrollbar { display: none; }
+.aba { flex: 0 0 auto; min-height: 38px; padding: 8px 14px; }
+
+.marca { font-size: 19px; }
+.conta { margin-left: auto; }
+
+/* --------------------------------------------------------- as telas */
+
+#tela-acervo, #tela-fila, #tela-biblioteca, #tela-config {
+    padding: 14px calc(var(--recorte-direita) + 12px)
+             calc(var(--recorte-base) + 32px) calc(var(--recorte-esquerda) + 12px);
+    -webkit-overflow-scrolling: touch;
+}
+
+.cabecalho-tela { flex-wrap: wrap; gap: 10px; }
+.acoes-cabecalho { width: 100%; justify-content: stretch; }
+.acoes-cabecalho input[type="search"] { flex: 1 1 auto; min-width: 0; }
+
+/* Alvos de dedo: 40px e o minimo confortavel. */
+button, .botao, .aba, .sub-aba, .icone, select {
+    min-height: 40px;
+}
+.icone { width: 40px; height: 40px; }
+.botao { padding: 10px 16px; }
+
+/* 16px no campo evita que o Android amplie a pagina ao focar. */
+input, select, textarea { font-size: 16px !important; min-height: 40px; }
+.campo input, .linha input { min-width: 0; }
+
+/* ----------------------------------------------------------- o acervo */
+
+#busca-acervo { min-width: 0; flex: 1 1 auto; }
+
+.filtros {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.filtros > label { min-width: 0; }
+.filtros select { min-width: 0; width: 100%; }
+.filtros .campo-switch.compacto { grid-column: 1 / -1; }
+
+.grade-acervo {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+}
+.cartao-acervo-info h3 { font-size: 13px; }
+
+.grade { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+
+/* --------------------------------------------------- fila e biblioteca */
+
+.item-topo { flex-wrap: wrap; gap: 8px; }
+.item-info { flex-wrap: wrap; gap: 6px 12px; }
+.item-acoes { gap: 6px; }
+.linha-dupla { grid-template-columns: 1fr; }
+#campo-magnet { min-width: 0; flex: 1 1 100%; }
+
+/* ------------------------------------------------------------ painéis */
+
+/*
+ * Num celular um painel centralizado com 80% da tela nao ajuda ninguem: a
+ * ficha, a edicao e a confirmacao ocupam a tela inteira, com a rolagem
+ * dentro delas.
+ */
+.modal-caixa, .ficha-caixa {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    border: none;
+}
+.modal { place-items: stretch; }
+.modal-caixa h2 { padding-top: calc(var(--recorte-topo) + 14px); }
+.modal-corpo { flex-direction: column; overflow-y: auto; }
+.modal-capa { width: 100%; flex-direction: row; align-items: flex-start; }
+.modal-capa .previa { width: 120px; flex-shrink: 0; }
+.modal-rodape {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: calc(var(--recorte-base) + 14px);
+}
+.modal-rodape .espaco { display: none; }
+
+.gate { padding: 16px; align-items: flex-start; overflow-y: auto; }
+.gate-caixa { width: 100%; max-width: 100%; margin-top: 8px; }
+.ficha-aparelho b { word-break: break-all; }
+
+/* ------------------------------------------------------------- player */
+
+#tela-player { padding-bottom: var(--recorte-base); }
+
+.controles {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px calc(var(--recorte-direita) + 12px)
+             calc(var(--recorte-base) + 10px) calc(var(--recorte-esquerda) + 12px);
+}
+.linha-botoes { flex-wrap: wrap; gap: 10px; width: 100%; }
+.titulo-player { order: -1; width: 100%; }
+.volume input { width: 110px; }
+.seletor { flex: 1 1 45%; min-width: 0; }
+.seletor select { max-width: none; width: 100%; }
+
+/* O toque na barra de tempo precisa de mais do que 4 px de altura. */
+.trilha { height: 26px; }
+.trilha .marcador { width: 16px; height: 16px; }
+
+/* ------------------------------------------------------------- avisos */
+
+#avisos {
+    left: 12px;
+    right: 12px;
+    bottom: calc(var(--recorte-base) + 12px);
+    align-items: stretch;
+}
+.aviso { max-width: none; }
+
+/* --------------------------------------- telas bem estreitas (≤ 420px) */
+
+@media (max-width: 420px) {
+    .grade-acervo { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+    .grade { grid-template-columns: 1fr; }
+    .filtros { grid-template-columns: 1fr; }
+    .conta .conta-nome { display: none; }
+    .cartao-topo .capa { width: 72px; }
+}
+
+/* ------------------------------------------ em pe, na horizontal (TV, tablet) */
+
+@media (min-width: 900px) {
+    .abas { order: 0; width: auto; }
+    .acoes-cabecalho { width: auto; }
+    .modal-caixa, .ficha-caixa { width: 92%; height: auto; max-height: 92%; border-radius: 14px; }
+    .modal { place-items: center; }
+    .modal-corpo { flex-direction: row; }
+    .modal-capa { width: 190px; flex-direction: column; }
+}

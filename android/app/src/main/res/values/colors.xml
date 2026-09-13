@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- As mesmas do site: o fundo e o dourado da marca. -->
+    <color name="fundo">#0B0D12</color>
+    <color name="destaque">#E8B64C</color>
+</resources>

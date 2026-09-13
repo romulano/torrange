@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A marca: a seta de baixar, em dourado, dentro de um anel aberto embaixo —
+    a abertura é justamente por onde a seta sai.
+
+    As cores são as do site (https://torrange.com): o dourado é a cor de
+    destaque do tema, a mesma do "ange" da assinatura; o anel vem do mesmo
+    dourado rebaixado, para o desenho ter dois planos sem uma segunda cor.
+
+    O grupo encolhe a 86% porque a máscara do Android recorta o ícone num
+    círculo de 72 de diâmetro: no tamanho cheio o anel encostaria na borda.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.86"
+        android:scaleY="0.86">
+
+        <!-- o anel, aberto embaixo -->
+        <path
+            android:pathData="M43.74,82.19 A30,30 0 1 1 64.26,82.19"
+            android:strokeColor="#6B5320"
+            android:strokeWidth="7"
+            android:strokeLineCap="round" />
+
+        <!-- a haste da seta -->
+        <path
+            android:pathData="M50,26 a4,4 0 0 1 8,0 v26 h-8 z"
+            android:fillColor="#E8B64C" />
+
+        <!-- a ponta -->
+        <path
+            android:pathData="M39,50 h30 l-15,23 z"
+            android:fillColor="#E8B64C" />
+    </group>
+</vector>

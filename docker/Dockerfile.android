@@ -1,0 +1,43 @@
+# Imagem para gerar o APK: JDK 17 + SDK do Android.
+# O Gradle vem pelo wrapper do projeto; o cache dele e montado de fora, para
+# uma segunda build nao baixar tudo de novo.
+FROM eclipse-temurin:17-jdk-jammy
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends unzip curl ca-certificates git \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV ANDROID_HOME=/opt/android-sdk
+
+RUN mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools" \
+ && curl -sL -o /tmp/cmdline.zip https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip \
+ && unzip -q /tmp/cmdline.zip -d "$ANDROID_SDK_ROOT/cmdline-tools" \
+ && mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest" \
+ && rm -f /tmp/cmdline.zip
+
+ENV PATH="$PATH:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools"
+
+RUN yes | sdkmanager --licenses > /dev/null \
+ && sdkmanager --install "platform-tools" "platforms;android-36" \
+      "build-tools;36.0.0" > /dev/null \
+ && chmod -R a+rX "$ANDROID_SDK_ROOT" 
+
+WORKDIR /app
+
+# O Gradle vem na imagem (o projeto nao carrega o wrapper binario no git) e o
+# rsvg gera a previa do icone a partir do SVG.
+#
+# O download sai do downloads.gradle.org, e nao do services.gradle.org: o
+# segundo redireciona para um servidor que, de algumas redes, entrega a poucos
+# KB/s -- o mesmo arquivo, meia hora mais tarde.
+ARG GRADLE=8.13
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends librsvg2-bin \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -sL -o /tmp/gradle.zip "https://downloads.gradle.org/distributions/gradle-${GRADLE}-bin.zip" \
+ && unzip -q /tmp/gradle.zip -d /opt \
+ && ln -s "/opt/gradle-${GRADLE}/bin/gradle" /usr/local/bin/gradle \
+ && rm -f /tmp/gradle.zip
+
+ENV GRADLE_USER_HOME=/cache/gradle

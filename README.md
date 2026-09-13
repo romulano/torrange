@@ -8,8 +8,8 @@ Aplicativo desktop (Electron) que junta três coisas numa janela só:
   instalar nada à parte;
 - **um player mpv**, que toca MKV com todas as faixas de áudio e legendas.
 
-Empacotado para **Windows** (`.exe`), **Linux** (AppImage e `.deb`) e
-**macOS** (`.dmg` e `.zip`).
+Empacotado para **Windows** (`.exe`), **Linux** (AppImage e `.deb`),
+**macOS** (`.dmg` e `.zip`) e **Android** (`.apk`).
 
 ---
 
@@ -26,10 +26,13 @@ Os instaladores estão publicados em
 | Linux (universal) | `Torrange-1.1.0.AppImage` |
 | macOS (Apple Silicon) | `Torrange-1.1.0-arm64-mac.zip` |
 | macOS (Intel) | `Torrange-1.1.0-mac.zip` |
+| Android (8.0 ou mais novo) | `Torrange-1.1.0.apk` |
 
 Nos pacotes de Windows e Linux o Electron, o qBittorrent e o mpv vão dentro:
 não é preciso instalar Node, npm nem o qBittorrent à parte. **No macOS é
-diferente** — veja a seção [macOS](#macos) abaixo.
+diferente** — veja a seção [macOS](#macos) abaixo. **No Android** também, por
+outro motivo: lá não existe "processo à parte", e os dois viraram biblioteca
+dentro do aplicativo — veja [Android](#android).
 
 > ### ⚠️ No Windows, faça isto antes de assistir
 >
@@ -300,6 +303,86 @@ processo principal — o renderer nunca vê o token nem monta URL de bucket.
 
 ---
 
+## <a id="android"></a>Android
+
+O `.apk` instala pelo próprio arquivo (não está na Play Store): abra-o no
+telefone e, na primeira vez, o Android vai pedir para liberar *"instalar
+aplicativos desconhecidos"* para o app que abriu o arquivo. Pede **Android 8.0**
+ou mais novo, e vale para telefone, tablet e TV box (ARM de 32 e de 64 bits).
+
+**A interface é a mesma, literalmente.** Os arquivos de `src/renderer/` — as
+mesmas 2.243 linhas de `app.js`, o mesmo `index.html`, a mesma folha de estilo —
+vão para dentro do APK e rodam numa WebView. Acervo, ficha com temporadas em
+accordion, fila, biblioteca com pastas e capas, ajustes e diagnóstico: tudo o
+que existe no desktop existe aqui, com o mesmo desenho e o mesmo comportamento.
+O que é diferente de sistema está em três arquivos separados
+(`android/assets-extras/`), justamente para a interface continuar sendo uma só.
+
+### O que mudou por baixo
+
+| No desktop | No Android | Por quê |
+| --- | --- | --- |
+| `qbittorrent-nox`, processo filho, falando WebUI API por HTTP | **libtorrent embutida** (`libtorrent4j`), chamada direto no processo | O Android não executa binário de terceiro solto: não há como subir um processo à parte nem abrir uma porta para ele. O qBittorrent também é libtorrent por dentro — o que sai é o intermediário. |
+| **mpv** acoplado a uma janela filha (`--wid`) | **libVLC** desenhando numa `SurfaceView` | Mesma razão, e o libVLC entrega o mesmo que importava no mpv: MKV, H.265, AC3/DTS/TrueHD, várias faixas de áudio e legendas embutidas (PGS e ASS inclusive). |
+| `safeStorage` (Keychain, DPAPI, libsecret) | **Android Keystore** (AES-GCM, chave que não sai do aparelho) | A regra é a mesma: o token é uma senha, fica cifrado pelo cofre do sistema e nunca chega à interface nem ao diagnóstico. |
+
+A troca não vazou para cima: o motor de torrent devolve os mesmos campos que o
+`/torrents/info` do qBittorrent devolvia, e o player recebe os comandos no
+vocabulário do mpv (`cycle pause`, `seek`, `set_property aid`) e publica as
+mesmas propriedades (`time-pos`, `duration`, `pause`). É o que permitiu a
+interface vir inteira, sem adaptação.
+
+### O vídeo
+
+O desktop posiciona a janela do mpv sobre a área de vídeo da interface. Aqui é o
+mesmo truque: a área de vídeo continua sendo um **buraco** no HTML, e a
+`SurfaceView` do libVLC é posta exatamente no retângulo que a interface informa
+pelo mesmo canal de sempre (`ui:layout`). Os controles — play, busca, volume,
+faixa de áudio, legenda, tela cheia — continuam sendo os da página.
+
+A barra de buffer ganhou um sentido melhor no caminho. No desktop ela mostrava o
+cache do demuxer; aqui mostra **até onde o arquivo já baixou**, que é o que de
+fato limita quem assiste antes de o download terminar.
+
+### Onde os arquivos ficam
+
+`Android/data/com.torrange.app/files/Movies/Torrange`, no armazenamento interno
+ou no cartão — a escolha está em **Ajustes → Pasta de downloads**.
+
+A lista de pastas é curta de propósito: são as únicas em que um aplicativo
+escreve com **caminho de arquivo comum**, que é do que a libtorrent precisa.
+Qualquer outra exigiria `MANAGE_EXTERNAL_STORAGE`, a permissão de gerenciador de
+arquivos — desproporcional para um cliente de torrent, e o Android trata quem a
+pede como candidato a explicação na Play Store.
+
+> **Desinstalar apaga os vídeos.** Essa pasta pertence ao aplicativo; o sistema
+> a remove junto. Se for desinstalar e quiser guardar o que baixou, mova os
+> arquivos antes.
+
+### Baixar com a tela apagada
+
+Existe uma barra de notificação enquanto o aplicativo roda. Ela não é enfeite: é
+o que compra do sistema o direito de continuar baixando depois que a tela apaga
+— sem ela o Android congela o processo em poucos minutos e o download para no
+meio.
+
+Quem preferir o contrário tem **Ajustes → "Continuar baixando com a tela
+apagada"**. Desligado, a sessão é suspensa quando o aplicativo sai da frente, e
+volta sozinha quando você o abre de novo: poupa bateria e dados.
+
+### Compartilhar para o Torrange
+
+Um **link magnet** tocado em qualquer aplicativo e um arquivo **.torrent** aberto
+pelo gerenciador de arquivos abrem o Torrange e entram na fila direto.
+
+### O que não existe aqui
+
+- **Acesso ao qBittorrent** (usuário, senha, endereço da WebUI): não há WebUI —
+  o motor roda dentro do processo, sem porta e sem senha. A seção some de
+  Ajustes.
+- **"Abrir o vídeo em janela separada"**: era a saída para a tela preta do
+  Windows. Aqui o vídeo sempre desenha na própria tela.
+
 ## <a id="macos"></a>macOS
 
 O app roda e é empacotado normalmente (`.dmg` e `.zip`, Intel e Apple Silicon),
@@ -386,6 +469,22 @@ Para o `.dmg` é preciso um Mac (o `hdiutil` só existe lá):
 npm run dist:mac      # rode num Mac
 ```
 
+**Android** — também só precisa de Docker:
+
+```bash
+./android/build-apk.sh          # release assinado, sai em dist/Torrange-1.1.0.apk
+./android/build-apk.sh debug    # build de depuração
+```
+
+O script monta sozinho a imagem com JDK 17, o SDK do Android e o Gradle, leva a
+interface de `src/renderer/` para os assets (`android/gerar-assets.sh`) e, na
+primeira vez, gera a chave de assinatura em `android/chave/` — que fica **fora
+do git**. Guarde esse arquivo: um APK assinado com outra chave não atualiza o
+que já está instalado, e o usuário teria de desinstalar e perder a biblioteca.
+
+> O APK não é assinado por uma loja. Na instalação o Android pede para liberar
+> *"instalar aplicativos desconhecidos"* para o aplicativo que abriu o arquivo.
+
 > O instalador do Windows não é assinado. Na primeira execução o SmartScreen
 > mostra um aviso — "Mais informações" → "Executar assim mesmo".
 
@@ -417,7 +516,14 @@ npm run teste:interface                           # navegação entre abas e sob
 npm run teste:player -- /caminho/video.mkv        # player: faixas, busca, pausa
 npm run teste:biblioteca -- /caminho/video.mkv    # pastas, capas e edição
 npm run teste:pacote                              # confere os instaladores gerados
+npm run teste:ponte-android                       # a ponte do Android x o preload do desktop
 ```
+
+O último não precisa de aparelho nem de emulador: ele lê o `app-preload.js` do
+desktop, monta a ponte do Android num contexto de mentira e confere método por
+método que os dois falam a mesma língua — inclusive que cada canal usado pela
+interface tem tratamento no `Ponte.kt`. É o teste que impede a interface
+compartilhada de quebrar só no telefone, onde ninguém vê o console.
 
 Eles rodam com uma pasta de dados própria (`--user-data-dir`), então não brigam
 pelo lock de instância única nem tocam na configuração, no token, na fila de
@@ -434,6 +540,9 @@ apagado** (a remoção usa `deleteFiles=false`).
 build.sh                      build de Windows e Linux no Docker
 scripts/build-mac.sh          build do macOS com .dmg (roda num Mac)
 scripts/empacotar-mac.sh      .zip do macOS a partir do Linux (assina ad-hoc)
+android/build-apk.sh          build do APK no Docker
+android/gerar-assets.sh       leva src/renderer para dentro do APK
+docker/Dockerfile.android     imagem com JDK 17 + SDK do Android + Gradle
 docker/Dockerfile             imagem com Node + Wine
 scripts/fetch-binaries.sh     baixa e verifica qbittorrent-nox e mpv
 scripts/binaries.manifest     URLs e SHA256 dos binários
@@ -451,6 +560,24 @@ src/main/
     config.js, paths.js       ajustes e caminhos (inclusive os do macOS)
 src/preload/app-preload.js    ponte segura para a interface
 src/renderer/                 interface (token, acervo, fila, biblioteca, player)
+                              -- a MESMA em desktop e Android
+android/app/src/main/java/com/torrange/app/
+    MainActivity.kt           a tela: WebView + a superfície do vídeo por cima
+    Ponte.kt                  o outro lado de app-preload.js (os mesmos canais)
+    Nucleo.kt                 o que o index.js faz: junta as peças e o monitor
+    Api.kt, Conexao.kt        a API do aplicativo e a máquina de estados, portadas
+    Credenciais.kt            token no Android Keystore, id estável da instalação
+    Motor.kt                  libtorrent embutida, no formato do /torrents/info
+    Player.kt                 libVLC falando o vocabulário do mpv
+    Biblioteca.kt             catálogo e posições de reprodução
+    Metadados.kt              pastas, capas, nomes, descrições e etiquetas
+    Diagnostico.kt            registro do app e geração do .log
+    ServicoTorrange.kt        o que segura os downloads com a tela apagada
+android/assets-extras/        as ÚNICAS diferenças de interface no Android
+    android-preload.js        monta window.torrange sobre a ponte
+    android.js               recortes do sistema, botão Voltar, ajustes de tela
+    movel.css                 alvos de toque e telas estreitas
+android/icone/icone.svg       o ícone (a fonte do vetor que vai no APK)
 testes/
     e2e.js                    token, acervo, download free e pago
     token.js                  a tabela de recusas da API
@@ -460,6 +587,7 @@ testes/
     player.js                 biblioteca e player com um MKV real
     biblioteca.js             pastas, capas e edição
     pacote.js                 verifica os instaladores gerados
+android/testes/ponte.js       a ponte do Android x o preload do desktop
     cdp.js                    utilidades de DevTools Protocol
     servidor-falso.js         a API do aplicativo, inteira, para os testes
 ```
