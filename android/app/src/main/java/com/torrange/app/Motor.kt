@@ -46,6 +46,7 @@ class Motor(private val contexto: Context, private val config: Config) {
     companion object {
         /** O que o qBittorrent chama de "infinito" na coluna de tempo restante. */
         const val ETA_INFINITA = 8_640_000L
+        const val PORTA = 6881
         private const val CATEGORIA = "torrange"
     }
 
@@ -66,6 +67,8 @@ class Motor(private val contexto: Context, private val config: Config) {
     private var ultimoErro: String = ""
     private var ultimaGravacaoDeRetomada = 0L
     private var comCofreDeCertificados = false
+    private var ouvinteDeRede: android.net.ConnectivityManager.NetworkCallback? = null
+    private var ultimasInterfaces = ""
     private var ultimoErroDeTracker: String = ""
 
     val ativo: Boolean get() = sessao?.isRunning == true
@@ -104,10 +107,18 @@ class Motor(private val contexto: Context, private val config: Config) {
             settings_pack.string_types.peer_fingerprint.swigValue(),
             "-TR1100-" // quem olha o enxame ve um cliente comum, nao um app novo
         )
-        pack.setString(
-            settings_pack.string_types.listen_interfaces.swigValue(),
-            "0.0.0.0:6881,[::]:6881"
-        )
+        /*
+         * Os enderecos de verdade, vindos do Android -- ver Rede.kt. Deixar a
+         * libtorrent descobrir sozinha nao funciona aqui: ela le a tabela de
+         * rotas, que o Android nao deixa ler, e acaba anunciando a partir de
+         * "qualquer endereco". Era dai que vinham o "Network is unreachable"
+         * (saindo por IPv6 para um tracker so-IPv4) e o erro de sistema
+         * (amarrando a conexao de saida na porta de escuta).
+         */
+        val interfaces = Rede.paraLibtorrent(contexto, PORTA)
+        ultimasInterfaces = interfaces
+        pack.setString(settings_pack.string_types.listen_interfaces.swigValue(), interfaces)
+        anotar("escutando em $interfaces")
 
         /*
          * O certificado do tracker so e conferido se houver com o que
@@ -170,6 +181,10 @@ class Motor(private val contexto: Context, private val config: Config) {
             s.start(SessionParams(ajustes()))
             sessao = s
             anotar("sessao no ar, porta ${try { SessionHandle(s.swig()).listenPort } catch (e: Exception) { "?" }}")
+
+            // Trocar de Wi-Fi para dados moveis muda o endereco: sem reabrir os
+            // soquetes, a sessao continua escutando num IP que nao existe mais.
+            ouvinteDeRede = Rede.observar(contexto) { aoTrocarDeRede() }
             restaurar()
             publicar("pronto")
         } catch (e: Throwable) {
@@ -219,8 +234,14 @@ class Motor(private val contexto: Context, private val config: Config) {
                      * registro, mudo. Foi o que aconteceu.
                      */
                     AlertType.TRACKER_ERROR, AlertType.TRACKER_WARNING, AlertType.SCRAPE_FAILED -> {
-                        ultimoErroDeTracker = alerta.message()
-                        anotar(alerta.message())
+                        // O codigo junto: "unspecified system error" sozinho nao
+                        // diz nada, e o numero diz de onde veio.
+                        val detalhe = (alerta as? org.libtorrent4j.alerts.TrackerErrorAlert)?.let { t ->
+                            val e = t.error()
+                            " [código ${e?.value ?: "?"}: ${e?.message ?: ""}]"
+                        } ?: ""
+                        ultimoErroDeTracker = alerta.message() + detalhe
+                        anotar(ultimoErroDeTracker)
                     }
                     AlertType.TORRENT_ERROR, AlertType.FILE_ERROR -> {
                         ultimoErro = alerta.message()
@@ -580,6 +601,20 @@ class Motor(private val contexto: Context, private val config: Config) {
         )
     }
 
+    /** A rede mudou: reaplica os enderecos e reabre os soquetes. */
+    private fun aoTrocarDeRede() {
+        val agora = Rede.paraLibtorrent(contexto, PORTA)
+        if (agora == ultimasInterfaces) return
+        ultimasInterfaces = agora
+        anotar("a rede mudou; escutando agora em $agora")
+        try {
+            sessao?.applySettings(ajustes())
+            sessao?.reopenNetworkSockets()
+        } catch (e: Exception) {
+            Diagnostico.anotarErro("motor", e)
+        }
+    }
+
     fun aplicarPreferencias() {
         try {
             sessao?.applySettings(ajustes())
@@ -608,6 +643,8 @@ class Motor(private val contexto: Context, private val config: Config) {
 
     @Synchronized
     fun encerrar() {
+        Rede.esquecer(contexto, ouvinteDeRede)
+        ouvinteDeRede = null
         try {
             for (h in emFila.values) if (h.isValid) h.saveResumeData()
             Thread.sleep(300) // deixa os alertas de retomada chegarem
@@ -860,6 +897,8 @@ class Motor(private val contexto: Context, private val config: Config) {
             .put("ultimoErro", ultimoErro.ifEmpty { JSONObject.NULL })
             .put("ultimoErroDeTracker", ultimoErroDeTracker.ifEmpty { JSONObject.NULL })
             .put("certificados", Certificados.relatorio())
+            .put("rede", Rede.relatorio(contexto))
+            .put("escutandoEm", ultimasInterfaces.ifEmpty { JSONObject.NULL })
             .put("conferindoCertificadoDoTracker", comCofreDeCertificados)
             .put("torrents", retratoDosTorrents())
     }

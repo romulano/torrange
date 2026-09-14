@@ -29,10 +29,11 @@ android {
         targetSdk = 35
         // Sobe a cada APK publicado, mesmo sem mudar o versionName: e o
         // numero que o Android usa para saber o que e atualizacao.
-        // 10103: o OpenSSL de dentro da libtorrent passa a enxergar as
-        // autoridades certificadoras do Android -- sem elas, o anuncio no
-        // tracker https morria no aperto de mao e o download nunca comecava.
-        versionCode = 10103
+        // 10104: a libtorrent passa a escutar (e falar) pelo endereco real do
+        // aparelho, vindo do Android. Ela nao consegue ler a tabela de rotas
+        // aqui, e por isso anunciava a partir de "qualquer endereco" -- que
+        // nao chega ao tracker.
+        versionCode = 10104
         versionName = versaoDoApp
 
         ndk {
