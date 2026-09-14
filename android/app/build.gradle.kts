@@ -27,7 +27,11 @@ android {
         applicationId = "com.torrange.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10100
+        // Sobe a cada APK publicado, mesmo sem mudar o versionName: e o
+        // numero que o Android usa para saber o que e atualizacao.
+        // 10101: conserta a lixeira (a WebView engolia o confirm) e o download
+        // que nao comecava (o torrent entrava pausado).
+        versionCode = 10101
         versionName = versaoDoApp
 
         ndk {

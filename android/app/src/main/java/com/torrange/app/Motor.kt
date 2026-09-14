@@ -57,6 +57,13 @@ class Motor(private val contexto: Context, private val config: Config) {
     private val registro = ArrayDeque<String>()
     private var estado = Estado("iniciando")
     private var aoEstado: (Estado) -> Unit = {}
+
+    /**
+     * Por onde o motor avisa a tela. Um erro de disco ou de tracker que fica
+     * so no registro vira "nao baixa e nao diz por que" -- que foi exatamente
+     * o que aconteceu.
+     */
+    var aoAviso: (String, String) -> Unit = { _, _ -> }
     private var ultimoErro: String = ""
     private var ultimaGravacaoDeRetomada = 0L
 
@@ -191,6 +198,19 @@ class Motor(private val contexto: Context, private val config: Config) {
                     AlertType.TORRENT_ERROR, AlertType.FILE_ERROR -> {
                         ultimoErro = alerta.message()
                         anotar(alerta.message())
+                        aoAviso(alerta.message(), "erro")
+                    }
+                    AlertType.TORRENT_REMOVED, AlertType.TORRENT_DELETED -> {
+                        anotar(alerta.message())
+                    }
+                    AlertType.TORRENT_DELETE_FAILED -> {
+                        anotar(alerta.message())
+                        aoAviso("Não consegui apagar os arquivos: ${alerta.message()}", "erro")
+                    }
+                    AlertType.FASTRESUME_REJECTED -> {
+                        // A retomada não bateu com o que há em disco: a
+                        // libtorrent reconfere sozinha, mas vale registrar.
+                        anotar(alerta.message())
                     }
                     else -> {}
                 }
@@ -290,7 +310,26 @@ class Motor(private val contexto: Context, private val config: Config) {
 
     private fun adicionarParams(params: AddTorrentParams): TorrentHandle? {
         val s = sessaoViva()
-        Caminhos.garantir(File(params.savePath))
+        val pasta = Caminhos.garantir(File(params.savePath))
+        if (!pasta.canWrite()) {
+            throw Exception("Não consigo escrever em ${pasta.absolutePath}. Escolha outra pasta em Ajustes.")
+        }
+
+        /*
+         * As duas flags que decidem se o download começa.
+         *
+         * A libtorrent entrega o add_torrent_params com `paused` E
+         * `auto_managed` ligados de fábrica: o torrent entra parado e espera o
+         * gerenciador automático liberar uma vaga. Era isso que fazia o item
+         * aparecer na aba Downloads e nunca sair do lugar, mesmo com seeds.
+         *
+         * Desligamos as duas: quem manda aqui é o usuário. Sem `auto_managed`,
+         * um pause feito no botão também não é desfeito pelas costas dele
+         * alguns segundos depois.
+         */
+        params.flags = params.flags
+            .and_(TorrentFlags.PAUSED.inv())
+            .and_(TorrentFlags.AUTO_MANAGED.inv())
 
         if (config.ligado("downloadSequencial")) {
             params.flags = params.flags.or_(TorrentFlags.SEQUENTIAL_DOWNLOAD)
@@ -301,8 +340,14 @@ class Motor(private val contexto: Context, private val config: Config) {
         if (erro.isError) throw Exception(erro.message)
         if (h == null || !h.isValid) throw Exception("a libtorrent recusou o torrent")
 
+        // Cinto e suspensório: se o torrent veio de uma retomada gravada com as
+        // flags antigas, o `paused` estaria lá dentro.
+        h.unsetFlags(TorrentFlags.PAUSED.or_(TorrentFlags.AUTO_MANAGED))
+        h.resume()
+
         lembrar(h)
         aplicarSequencial(h)
+        anotar("adicionado em ${pasta.absolutePath}: ${h.status().name()}")
         return h
     }
 
@@ -385,37 +430,95 @@ class Motor(private val contexto: Context, private val config: Config) {
     @Synchronized
     fun pausar(hash: String) {
         encontrar(hash)?.let {
+            // A flag e o pause andam juntos: sem ela, a libtorrent pode
+            // retomar o torrent por conta propria na volta da sessao.
+            it.setFlags(TorrentFlags.PAUSED)
             it.pause()
             it.saveResumeData()
+            anotar("pausado: ${it.status().name()}")
         }
     }
 
     @Synchronized
     fun retomar(hash: String) {
-        encontrar(hash)?.resume()
+        encontrar(hash)?.let {
+            it.unsetFlags(TorrentFlags.PAUSED)
+            it.resume()
+            anotar("retomado: ${it.status().name()}")
+        }
     }
 
-    @Synchronized
+    /**
+     * Tira o torrent da fila.
+     *
+     * A remocao na libtorrent e ASSINCRONA: `remove` so agenda, e o torrent
+     * continua aparecendo em `torrents()` por um instante. Sem esperar, o
+     * proximo ciclo do monitor (que roda a cada segundo) reencontraria o
+     * torrent e o poria de volta no mapa -- e a linha voltaria para a tela,
+     * como se o toque na lixeira nao tivesse funcionado.
+     *
+     * Por isso esperamos a confirmacao antes de dar o assunto por encerrado.
+     */
     fun remover(hash: String, apagarArquivos: Boolean) {
-        val h = encontrar(hash) ?: return
-        val s = sessao
+        val h: TorrentHandle
+        val s: SessionManager
+        synchronized(this) {
+            val achado = encontrar(hash)
+            if (achado == null) {
+                anotar("remover: não achei $hash na sessão (já tinha saído?)")
+                emFila.remove(hash)
+                guardarFila()
+                return
+            }
+            h = achado
+            s = sessao ?: return
+            // Sai do mapa ANTES da chamada: enquanto a libtorrent trabalha, o
+            // monitor não pode reanunciá-lo como se estivesse na fila.
+            emFila.remove(hash)
+        }
+
+        val nome = try { h.status().name() } catch (e: Exception) { hash }
         try {
             if (apagarArquivos) {
-                s?.remove(h, org.libtorrent4j.swig.session_handle.delete_files)
+                s.remove(h, org.libtorrent4j.swig.session_handle.delete_files)
             } else {
-                s?.remove(h)
+                s.remove(h)
             }
         } catch (e: Exception) {
             Diagnostico.anotarErro("motor", e)
+            anotar("remover: a libtorrent recusou \"$nome\": ${e.message}")
+            return
         }
-        emFila.remove(hash)
-        try {
-            arquivoTorrentDe(hash).delete()
-            File(Caminhos.retomada(contexto), "$hash.dat").delete()
-        } catch (e: Exception) {
-            // nada a fazer
+
+        // Espera a sessão largar o torrent de verdade (costuma levar poucos ms).
+        var saiu = false
+        for (i in 0 until 30) {
+            val ainda = try {
+                s.find(Sha1Hash.parseHex(hash))?.isValid == true
+            } catch (e: Exception) {
+                false
+            }
+            if (!ainda) {
+                saiu = true
+                break
+            }
+            Thread.sleep(100)
         }
-        guardarFila()
+
+        synchronized(this) {
+            emFila.remove(hash)
+            try {
+                arquivoTorrentDe(hash).delete()
+                File(Caminhos.retomada(contexto), "$hash.dat").delete()
+            } catch (e: Exception) {
+                // nada a fazer
+            }
+            guardarFila()
+        }
+        anotar(
+            if (saiu) "removido \"$nome\"${if (apagarArquivos) " (com os arquivos)" else ""}"
+            else "remover: \"$nome\" ainda aparece na sessão depois de 3 s"
+        )
     }
 
     fun aplicarPreferencias() {
@@ -507,6 +610,8 @@ class Motor(private val contexto: Context, private val config: Config) {
             .put("size", st.totalWanted())
             .put("total_size", st.total())
             .put("downloaded", st.totalDone())
+            // a interface mostra "quanto de quanto" com este campo
+            .put("completed", st.totalWantedDone())
             .put("uploaded", st.allTimeUpload())
             .put("num_seeds", st.numSeeds())
             .put("num_leechs", (st.numPeers() - st.numSeeds()).coerceAtLeast(0))
@@ -587,6 +692,87 @@ class Motor(private val contexto: Context, private val config: Config) {
         return saida
     }
 
+    /**
+     * O retrato de cada torrent da fila.
+     *
+     * E a parte do diagnostico que responde "por que nao baixa": diz se o
+     * torrent esta pausado, se a libtorrent registrou erro, quantos pares
+     * apareceram, o que cada tracker respondeu e se a pasta de destino aceita
+     * escrita.
+     */
+    private fun retratoDosTorrents(): JSONArray {
+        val saida = JSONArray()
+        val s = sessao ?: return saida
+        val lista = try {
+            SessionHandle(s.swig()).torrents()
+        } catch (e: Exception) {
+            return saida
+        }
+
+        for (h in lista) {
+            if (!h.isValid) continue
+            try {
+                val st = h.status()
+                val flags = st.flags()
+                val pasta = File(h.savePath())
+
+                val trackers = JSONArray()
+                for (t in (try { h.trackers() } catch (e: Exception) { emptyList() })) {
+                    val endpoints = JSONArray()
+                    for (e in (try { t.endpoints() } catch (ex: Exception) { emptyList() })) {
+                        // O que o tracker respondeu fica no infohash v1 do
+                        // endpoint -- e a frase que explica um "0 seeds".
+                        val info = try { e.infohashV1() } catch (ex: Exception) { null }
+                        endpoints.put(
+                            JSONObject()
+                                .put("habilitado", try { e.enabled() } catch (ex: Exception) { false })
+                                .put("respondendo", info?.isWorking ?: false)
+                                .put("mensagem", info?.message() ?: "")
+                                .put("falhas", info?.fails()?.toInt() ?: -1)
+                        )
+                    }
+                    trackers.put(
+                        JSONObject()
+                            .put("url", t.url())
+                            .put("endpoints", endpoints)
+                    )
+                }
+
+                saida.put(
+                    JSONObject()
+                        .put("nome", st.name())
+                        .put("hash", h.infoHash().toHex())
+                        .put("estado", st.state().toString())
+                        .put("progresso", st.progress().toDouble())
+                        .put("temMetadados", st.hasMetadata())
+                        .put("erro", st.errorCode()?.message ?: "")
+                        .put(
+                            "flags",
+                            JSONObject()
+                                .put("pausado", flags.and_(TorrentFlags.PAUSED).non_zero())
+                                .put("automatico", flags.and_(TorrentFlags.AUTO_MANAGED).non_zero())
+                                .put("sequencial", flags.and_(TorrentFlags.SEQUENTIAL_DOWNLOAD).non_zero())
+                                .put("modoUpload", flags.and_(TorrentFlags.UPLOAD_MODE).non_zero())
+                        )
+                        .put("pares", st.numPeers())
+                        .put("seedsConectados", st.numSeeds())
+                        .put("seedsNoEnxame", st.numComplete())
+                        .put("paresNoEnxame", st.numIncomplete())
+                        .put("candidatos", st.connectCandidates())
+                        .put("taxa", st.downloadPayloadRate())
+                        .put("querBaixar", st.totalWanted())
+                        .put("jaTem", st.totalWantedDone())
+                        .put("pasta", pasta.absolutePath)
+                        .put("pastaGravavel", pasta.canWrite())
+                        .put("trackers", trackers)
+                )
+            } catch (e: Exception) {
+                saida.put(JSONObject().put("erro", "não consegui ler: ${e.message}"))
+            }
+        }
+        return saida
+    }
+
     /** Para o arquivo de diagnostico. */
     fun diagnostico(): JSONObject {
         val s = sessao
@@ -601,5 +787,6 @@ class Motor(private val contexto: Context, private val config: Config) {
             .put("taxaUpload", try { s?.uploadRate() ?: 0 } catch (e: Exception) { 0 })
             .put("naFila", emFila.size)
             .put("ultimoErro", ultimoErro.ifEmpty { JSONObject.NULL })
+            .put("torrents", retratoDosTorrents())
     }
 }

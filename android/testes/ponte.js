@@ -190,6 +190,36 @@ teste('todo canal da interface existe no Ponte.kt', () => {
     assert.deepStrictEqual(faltando, [], `canais sem tratamento no Kotlin: ${faltando.join(', ')}`);
 });
 
+/*
+ * A libtorrent entrega o add_torrent_params com `paused` e `auto_managed`
+ * ligados de fábrica -- medido na própria biblioteca:
+ *
+ *     de fabrica         paused=true  auto_managed=true
+ *     depois do ajuste   paused=false auto_managed=false
+ *
+ * Com eles, o torrent entra na fila e fica parado esperando o gerenciador
+ * automático -- que foi o bug "vai para Downloads e não baixa, mesmo com
+ * seeds". Se alguém tirar esse ajuste, o bug volta inteiro e em silêncio.
+ */
+teste('o motor desliga as flags que deixariam o torrent parado', () => {
+    const motor = fs.readFileSync(
+        path.join(raiz, 'android', 'app', 'src', 'main', 'java', 'com', 'torrange', 'app', 'Motor.kt'),
+        'utf8'
+    );
+    const adicionar = /private fun adicionarParams[\s\S]*?\n    \}/.exec(motor);
+    assert.ok(adicionar, 'não achei adicionarParams no Motor.kt');
+
+    const trecho = adicionar[0];
+    assert.ok(
+        /TorrentFlags\.PAUSED\.inv\(\)/.test(trecho),
+        'adicionarParams não limpa a flag PAUSED'
+    );
+    assert.ok(
+        /TorrentFlags\.AUTO_MANAGED\.inv\(\)/.test(trecho),
+        'adicionarParams não limpa a flag AUTO_MANAGED'
+    );
+});
+
 teste('não existe caminho para LER o token', () => {
     const texto = JSON.stringify(api, (chave, valor) =>
         typeof valor === 'function' ? String(valor) : valor

@@ -94,6 +94,9 @@ class Nucleo(private val contexto: Context) {
 
     private fun subirMotor() {
         publicarEstadoMotor("iniciando")
+        // Erro de disco ou de tracker vai para a tela, e nao so para o
+        // registro: "nao baixa e nao diz por que" e o pior desfecho.
+        motor.aoAviso = { texto, tipo -> avisar(texto, tipo) }
         motor.iniciar { estado ->
             publicarEstadoMotor(estado.fase, estado.motivo)
             if (estado.fase == "pronto") {

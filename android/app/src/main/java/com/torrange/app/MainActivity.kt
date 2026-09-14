@@ -12,7 +12,12 @@ import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.webkit.ConsoleMessage
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
+import android.webkit.WebChromeClient
 import android.webkit.WebViewClient
+import android.widget.EditText
 import android.widget.FrameLayout
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -198,6 +203,64 @@ class MainActivity : AppCompatActivity(), Ponte.Tela {
         webview.setBackgroundColor(Color.parseColor("#0e1013"))
         webview.isVerticalScrollBarEnabled = false
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+
+        /*
+         * Sem um WebChromeClient, a WebView ENGOLE window.confirm() e
+         * window.prompt(): não mostra nada e devolve false/null na hora. A
+         * interface usa os dois em quatro lugares -- remover um torrent,
+         * desconectar o aparelho, excluir uma pasta e criar uma pasta --, e
+         * todos ficavam mudos: o toque na lixeira simplesmente não fazia nada.
+         *
+         * Aqui cada um vira uma caixa de diálogo de verdade do Android. A
+         * resposta volta pelo mesmo caminho que o navegador usaria, então a
+         * interface continua sendo a mesma das outras plataformas.
+         */
+        webview.webChromeClient = object : WebChromeClient() {
+            override fun onJsAlert(v: WebView?, url: String?, mensagem: String?, r: JsResult): Boolean {
+                AlertDialog.Builder(this@MainActivity)
+                    .setMessage(mensagem)
+                    .setPositiveButton("OK") { _, _ -> r.confirm() }
+                    .setOnCancelListener { r.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsConfirm(v: WebView?, url: String?, mensagem: String?, r: JsResult): Boolean {
+                AlertDialog.Builder(this@MainActivity)
+                    .setMessage(mensagem)
+                    .setPositiveButton("OK") { _, _ -> r.confirm() }
+                    .setNegativeButton("Cancelar") { _, _ -> r.cancel() }
+                    .setOnCancelListener { r.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsPrompt(
+                v: WebView?, url: String?, mensagem: String?, padrao: String?, r: JsPromptResult
+            ): Boolean {
+                val campo = EditText(this@MainActivity).apply {
+                    setText(padrao ?: "")
+                    setSelection(text.length)
+                }
+                AlertDialog.Builder(this@MainActivity)
+                    .setMessage(mensagem)
+                    .setView(campo)
+                    .setPositiveButton("OK") { _, _ -> r.confirm(campo.text.toString()) }
+                    .setNegativeButton("Cancelar") { _, _ -> r.cancel() }
+                    .setOnCancelListener { r.cancel() }
+                    .show()
+                return true
+            }
+
+            /** O console da interface entra no arquivo de diagnóstico. */
+            override fun onConsoleMessage(m: ConsoleMessage): Boolean {
+                Diagnostico.anotar(
+                    "interface",
+                    "[${m.messageLevel()}] ${m.message()} (${m.sourceId()}:${m.lineNumber()})"
+                )
+                return true
+            }
+        }
 
         webview.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
