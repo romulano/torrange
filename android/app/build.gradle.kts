@@ -29,9 +29,10 @@ android {
         targetSdk = 35
         // Sobe a cada APK publicado, mesmo sem mudar o versionName: e o
         // numero que o Android usa para saber o que e atualizacao.
-        // 10101: conserta a lixeira (a WebView engolia o confirm) e o download
-        // que nao comecava (o torrent entrava pausado).
-        versionCode = 10101
+        // 10102: o torrent passa a entrar COM os trackers (na libtorrent 2.1
+        // eles sairam do torrent_info), o nome do arquivo volta a aparecer e o
+        // arquivo de diagnostico volta a ser gerado.
+        versionCode = 10102
         versionName = versaoDoApp
 
         ndk {

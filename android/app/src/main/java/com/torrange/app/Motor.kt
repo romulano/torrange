@@ -14,7 +14,6 @@ import org.libtorrent4j.SettingsPack
 import org.libtorrent4j.Sha1Hash
 import org.libtorrent4j.TorrentFlags
 import org.libtorrent4j.TorrentHandle
-import org.libtorrent4j.TorrentInfo
 import org.libtorrent4j.TorrentStatus
 import org.libtorrent4j.Vectors
 import org.libtorrent4j.alerts.Alert
@@ -189,7 +188,7 @@ class Motor(private val contexto: Context, private val config: Config) {
                     }
                     AlertType.TORRENT_FINISHED -> {
                         val h = (alerta as TorrentAlert<*>).handle()
-                        anotar("concluido: ${h.status().name()}")
+                        anotar("concluido: ${statusDe(h).name()}")
                         h.saveResumeData()
                     }
                     AlertType.LISTEN_FAILED, AlertType.SESSION_ERROR -> {
@@ -243,7 +242,7 @@ class Motor(private val contexto: Context, private val config: Config) {
                 lista.put(
                     JSONObject()
                         .put("hash", hash)
-                        .put("nome", h.status().name())
+                        .put("nome", statusDe(h).name())
                         .put("savePath", h.savePath())
                         .put("magnet", try { h.makeMagnetUri() } catch (e: Exception) { "" })
                 )
@@ -255,6 +254,23 @@ class Motor(private val contexto: Context, private val config: Config) {
     }
 
     private fun arquivoTorrentDe(hash: String) = File(Caminhos.torrents(contexto), "$hash.torrent")
+
+    /**
+     * Le um .torrent do disco e devolve os parametros COMPLETOS.
+     *
+     * Este e o detalhe que fazia o download nunca comecar. Ate a libtorrent
+     * 2.0, a lista de trackers morava dentro do `torrent_info`; na 2.1 ela
+     * saiu de la -- `TorrentInfo` nem tem mais o metodo `trackers()`. Montar
+     * os parametros com `setTorrentInfo()` entregava um torrent SEM NENHUM
+     * tracker: ele entrava na fila, ficava em "baixando", nunca anunciava e
+     * por isso nunca encontrava um par. Na tela: "sem seeds", para sempre.
+     *
+     * `load_torrent_file` le o arquivo inteiro e traz trackers, web seeds e o
+     * resto junto. Por isso os bytes sao gravados ANTES de entrar na sessao:
+     * esta rota pede um caminho em disco, nao um buffer.
+     */
+    private fun paramsDoArquivo(arquivo: File): AddTorrentParams =
+        AddTorrentParams(libtorrent.load_torrent_file(arquivo.absolutePath))
 
     /** Reabre o que ja estava na fila quando o aplicativo foi fechado. */
     private fun restaurar() {
@@ -286,9 +302,7 @@ class Motor(private val contexto: Context, private val config: Config) {
                         if (ec.value() != 0) throw Exception("retomada inválida: ${ec.message()}")
                         AddTorrentParams(swig)
                     }
-                    torrent.exists() -> AddTorrentParams().apply {
-                        setTorrentInfo(TorrentInfo.bdecode(torrent.readBytes()))
-                    }
+                    torrent.exists() -> paramsDoArquivo(torrent)
                     item.optString("magnet").isNotEmpty() ->
                         AddTorrentParams.parseMagnetUri(item.optString("magnet"))
                     else -> continue
@@ -347,7 +361,7 @@ class Motor(private val contexto: Context, private val config: Config) {
 
         lembrar(h)
         aplicarSequencial(h)
-        anotar("adicionado em ${pasta.absolutePath}: ${h.status().name()}")
+        anotar("adicionado em ${pasta.absolutePath}: ${statusDe(h).name()}")
         return h
     }
 
@@ -381,16 +395,21 @@ class Motor(private val contexto: Context, private val config: Config) {
     fun adicionar(dados: ByteArray?, nome: String?, magnet: String?): JSONObject? {
         val pasta = config.pastaDownloads()
 
+        var temporario: File? = null
         val params = if (!magnet.isNullOrEmpty()) {
             AddTorrentParams.parseMagnetUri(magnet)
         } else {
             val bytes = dados ?: throw Exception("torrent vazio")
-            val ti = try {
-                TorrentInfo.bdecode(bytes)
-            } catch (e: Exception) {
+            // Grava antes de ler: veja `paramsDoArquivo`.
+            val arquivo = File(Caminhos.torrents(contexto), "entrada-${System.nanoTime()}.torrent")
+            arquivo.writeBytes(bytes)
+            temporario = arquivo
+            try {
+                paramsDoArquivo(arquivo)
+            } catch (e: Throwable) {
+                arquivo.delete()
                 throw Exception("O arquivo não é um .torrent válido.")
             }
-            AddTorrentParams().apply { setTorrentInfo(ti) }
         }
         params.savePath = pasta.absolutePath
 
@@ -398,20 +417,32 @@ class Motor(private val contexto: Context, private val config: Config) {
         val hashes = params.infoHashes
         val existente = hashes?.v1?.let { encontrar(it.toHex()) }
         if (existente != null) {
-            anotar("já estava na fila: ${existente.status().name()}")
+            anotar("já estava na fila: ${statusDe(existente).name()}")
             return comoInfo(existente)
         }
 
-        val h = adicionarParams(params) ?: return null
+        val h = try {
+            adicionarParams(params) ?: return null
+        } catch (e: Throwable) {
+            temporario?.delete()
+            throw e
+        }
 
-        if (dados != null) {
+        // O .torrent fica guardado com o nome do hash: e dele que a proxima
+        // abertura reabre a fila.
+        temporario?.let { origem ->
             try {
-                arquivoTorrentDe(h.infoHash().toHex()).writeBytes(dados)
+                val destino = arquivoTorrentDe(h.infoHash().toHex())
+                if (destino.exists()) destino.delete()
+                if (!origem.renameTo(destino)) {
+                    destino.writeBytes(origem.readBytes())
+                    origem.delete()
+                }
             } catch (e: Exception) {
                 Diagnostico.anotar("erro", "nao consegui guardar o .torrent: ${e.message}")
             }
         }
-        anotar("na fila: ${h.status().name()}")
+        anotar("na fila: ${statusDe(h).name()}")
         return comoInfo(h)
     }
 
@@ -435,7 +466,7 @@ class Motor(private val contexto: Context, private val config: Config) {
             it.setFlags(TorrentFlags.PAUSED)
             it.pause()
             it.saveResumeData()
-            anotar("pausado: ${it.status().name()}")
+            anotar("pausado: ${statusDe(it).name()}")
         }
     }
 
@@ -444,7 +475,7 @@ class Motor(private val contexto: Context, private val config: Config) {
         encontrar(hash)?.let {
             it.unsetFlags(TorrentFlags.PAUSED)
             it.resume()
-            anotar("retomado: ${it.status().name()}")
+            anotar("retomado: ${statusDe(it).name()}")
         }
     }
 
@@ -477,7 +508,7 @@ class Motor(private val contexto: Context, private val config: Config) {
             emFila.remove(hash)
         }
 
-        val nome = try { h.status().name() } catch (e: Exception) { hash }
+        val nome = try { statusDe(h).name() } catch (e: Exception) { hash }
         try {
             if (apagarArquivos) {
                 s.remove(h, org.libtorrent4j.swig.session_handle.delete_files)
@@ -583,9 +614,21 @@ class Motor(private val contexto: Context, private val config: Config) {
         }
     }
 
+    /**
+     * O status do torrent COM o nome dentro.
+     *
+     * `TorrentHandle.status()` da libtorrent4j chama `status(STATUS_FLAGS_ZERO)`:
+     * sem nenhuma query flag, a libtorrent devolve o status sem os campos
+     * caros -- e `name` e `save_path` sao dois deles. Era por isso que a fila
+     * mostrava o info-hash no lugar do nome do arquivo, enquanto o tamanho
+     * (que e campo basico) aparecia certinho.
+     */
+    private fun statusDe(h: TorrentHandle): TorrentStatus =
+        h.status(TorrentHandle.QUERY_NAME.or_(TorrentHandle.QUERY_SAVE_PATH))
+
     private fun comoInfo(h: TorrentHandle): JSONObject? {
         if (!h.isValid) return null
-        val st = h.status()
+        val st = statusDe(h)
         val pausado = st.flags().and_(TorrentFlags.PAUSED).non_zero()
         val falta = (st.totalWanted() - st.totalWantedDone()).coerceAtLeast(0)
         val taxa = st.downloadPayloadRate()
@@ -712,7 +755,7 @@ class Motor(private val contexto: Context, private val config: Config) {
         for (h in lista) {
             if (!h.isValid) continue
             try {
-                val st = h.status()
+                val st = statusDe(h)
                 val flags = st.flags()
                 val pasta = File(h.savePath())
 

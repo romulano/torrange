@@ -56,6 +56,24 @@ class Player(private val contexto: Context) {
 
     val aberto: Boolean get() = mp != null
 
+    /**
+     * A versao da libVLC, se der para perguntar.
+     *
+     * `LibVLC.version()` e um metodo NATIVO estatico, e as bibliotecas nativas
+     * so sao carregadas quando o primeiro LibVLC e construido. Perguntar antes
+     * disso lanca UnsatisfiedLinkError -- um Error, que nao e pego por um
+     * `catch (Exception)`. Era isso que derrubava o arquivo de diagnostico
+     * inteiro para quem ainda nao tinha aberto nenhum video.
+     */
+    private fun versaoDaLibVlc(): String {
+        if (vlc == null) return "libVLC (ainda não iniciada nesta execução)"
+        return try {
+            "libVLC ${LibVLC.version()}"
+        } catch (e: Throwable) {
+            "libVLC (não consegui ler a versão: ${e.javaClass.simpleName})"
+        }
+    }
+
     private fun anotar(texto: String) {
         registro.addLast("${Diagnostico.agora()}  $texto")
         while (registro.size > 80) registro.removeFirst()
@@ -395,7 +413,7 @@ class Player(private val contexto: Context) {
     fun diagnostico(): JSONObject {
         val jogador = mp
         return JSONObject()
-            .put("motor", "libVLC ${try { LibVLC.version() } catch (e: Exception) { "?" }}")
+            .put("motor", versaoDaLibVlc())
             .put("aberto", jogador != null)
             .put("caminho", caminhoAtual)
             .put("tocando", jogador?.isPlaying ?: false)
@@ -404,7 +422,7 @@ class Player(private val contexto: Context) {
             .put("volume", volume)
             .put("mudo", mudo)
             .put("superficie", superficie?.let { "${it.width}x${it.height}" } ?: "(sem superfície)")
-            .put("faixas", try { faixas() } catch (e: Exception) { JSONObject.NULL })
+            .put("faixas", try { faixas() } catch (e: Throwable) { JSONObject.NULL })
             .put("registro", JSONArray(registro.toList()))
     }
 }

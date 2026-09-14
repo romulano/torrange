@@ -406,17 +406,34 @@ class Nucleo(private val contexto: Context) {
         .put("android", android.os.Build.VERSION.RELEASE)
         .put("aparelho", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
 
-    /** Junta o que o modulo de diagnostico precisa das outras pecas. */
+    /**
+     * Junta o que o modulo de diagnostico precisa das outras pecas.
+     *
+     * Cada peca vem embrulhada: um relatorio que morre porque UMA das partes
+     * falhou e inutil justamente na hora em que ele importa -- que e quando
+     * alguma coisa esta quebrada. Se uma peca nao responde, entra no lugar
+     * dela o motivo, e o resto do arquivo sai igual.
+     *
+     * O embrulho pega Throwable, e nao Exception: quem derrubou o diagnostico
+     * inteiro na primeira versao foi um UnsatisfiedLinkError -- um Error.
+     */
+    private fun seguro(nome: String, fn: () -> Any?): Any = try {
+        fn() ?: JSONObject.NULL
+    } catch (e: Throwable) {
+        Diagnostico.anotar("diagnostico", "não consegui coletar \"$nome\": $e")
+        JSONObject().put("erro", "$e")
+    }
+
     fun fontesDeDiagnostico(tela: JSONObject?): JSONObject = JSONObject()
-        .put("config", config.ler())
-        .put("conexao", conexao.atual())
-        .put("motor", motor.diagnostico())
-        .put("registroMotor", JSONArray(motor.registro()))
-        .put("player", try { player.diagnostico() } catch (e: Exception) { JSONObject().put("erro", e.message) })
-        .put("fila", biblioteca.snapshot())
-        .put("biblioteca", metadados.aplicar(biblioteca.listar()))
+        .put("config", seguro("config") { config.ler() })
+        .put("conexao", seguro("conexao") { conexao.atual() })
+        .put("motor", seguro("motor") { motor.diagnostico() })
+        .put("registroMotor", seguro("registro do motor") { JSONArray(motor.registro()) })
+        .put("player", seguro("player") { player.diagnostico() })
+        .put("fila", seguro("fila") { biblioteca.snapshot() })
+        .put("biblioteca", seguro("biblioteca") { metadados.aplicar(biblioteca.listar()) })
         .put("tela", tela ?: JSONObject.NULL)
-        .put("webview", webviewInstalada())
+        .put("webview", seguro("webview") { webviewInstalada() })
 
     private fun webviewInstalada(): String = try {
         val pacote = android.webkit.WebView.getCurrentWebViewPackage()
@@ -430,9 +447,11 @@ class Nucleo(private val contexto: Context) {
         val r = Diagnostico.salvar(contexto, destino, fontesDeDiagnostico(tela))
         avisar("Diagnóstico salvo em ${destino.absolutePath}", "ok")
         r
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         Diagnostico.anotarErro("diagnostico", e)
-        JSONObject().put("erro", e.message ?: "falha")
+        // A tela precisa receber ALGO: uma promessa rejeitada aqui vira um
+        // botao que pisca "Coletando..." e volta ao normal, sem dizer nada.
+        JSONObject().put("erro", e.message ?: e.toString())
     }
 
     // ------------------------------------------------------------ ciclo de vida

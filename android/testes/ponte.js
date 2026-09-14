@@ -104,6 +104,11 @@ function montarPonte() {
     return { api: janela.torrange, chamadas, janela };
 }
 
+/** Tira comentários de bloco e de linha de um fonte Kotlin. */
+function semComentarios(fonte) {
+    return fonte.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+}
+
 function caminho(objeto, nome) {
     return nome.split('.').reduce((atual, parte) => (atual ? atual[parte] : undefined), objeto);
 }
@@ -217,6 +222,33 @@ teste('o motor desliga as flags que deixariam o torrent parado', () => {
     assert.ok(
         /TorrentFlags\.AUTO_MANAGED\.inv\(\)/.test(trecho),
         'adicionarParams não limpa a flag AUTO_MANAGED'
+    );
+});
+
+/*
+ * Na libtorrent 2.1 a lista de trackers saiu do torrent_info: montar o torrent
+ * com setTorrentInfo() entrega um torrent sem tracker nenhum, que nunca
+ * anuncia e nunca acha um par -- "sem seeds" para sempre, sem erro nenhum na
+ * tela. Medido com a própria biblioteca:
+ *
+ *     setTorrentInfo(TorrentInfo.bdecode(bytes))  ->  h.trackers() vazio
+ *     load_torrent_file(caminho)                  ->  trackers presentes, anuncia
+ */
+teste('o motor lê o .torrent por um caminho que traz os trackers', () => {
+    // Sem os comentários: eles explicam justamente o que NÃO se deve usar.
+    const motor = semComentarios(
+        fs.readFileSync(
+            path.join(raiz, 'android', 'app', 'src', 'main', 'java', 'com', 'torrange', 'app', 'Motor.kt'),
+            'utf8'
+        )
+    );
+    assert.ok(
+        /libtorrent\.load_torrent_file\(/.test(motor),
+        'o motor não usa load_torrent_file'
+    );
+    assert.ok(
+        !/setTorrentInfo\(/.test(motor),
+        'o motor voltou a montar o torrent com setTorrentInfo (perde os trackers)'
     );
 });
 
