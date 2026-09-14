@@ -65,6 +65,8 @@ class Motor(private val contexto: Context, private val config: Config) {
     var aoAviso: (String, String) -> Unit = { _, _ -> }
     private var ultimoErro: String = ""
     private var ultimaGravacaoDeRetomada = 0L
+    private var comCofreDeCertificados = false
+    private var ultimoErroDeTracker: String = ""
 
     val ativo: Boolean get() = sessao?.isRunning == true
 
@@ -107,6 +109,19 @@ class Motor(private val contexto: Context, private val config: Config) {
             "0.0.0.0:6881,[::]:6881"
         )
 
+        /*
+         * O certificado do tracker so e conferido se houver com o que
+         * conferir. Com o cofre do sistema no lugar (o caso normal), a
+         * conferencia fica LIGADA. Sem ele, a escolha seria entre uma
+         * conferencia que reprova todo mundo -- e nenhum download -- e um
+         * anuncio sem conferir; ficamos com o segundo, e o diagnostico diz
+         * qual dos dois esta valendo.
+         */
+        pack.setBoolean(
+            settings_pack.bool_types.validate_https_trackers.swigValue(),
+            comCofreDeCertificados
+        )
+
         pack.setBoolean(settings_pack.bool_types.enable_dht.swigValue(), true)
         pack.setBoolean(settings_pack.bool_types.enable_lsd.swigValue(), true)
         pack.setBoolean(settings_pack.bool_types.enable_upnp.swigValue(), true)
@@ -146,6 +161,10 @@ class Motor(private val contexto: Context, private val config: Config) {
 
         publicar("iniciando")
         try {
+            // Antes de qualquer TLS: o OpenSSL de dentro da libtorrent precisa
+            // saber onde estao as autoridades certificadoras deste aparelho.
+            comCofreDeCertificados = Certificados.preparar(contexto)
+
             val s = SessionManager()
             s.addListener(ouvinte)
             s.start(SessionParams(ajustes()))
@@ -192,6 +211,15 @@ class Motor(private val contexto: Context, private val config: Config) {
                         h.saveResumeData()
                     }
                     AlertType.LISTEN_FAILED, AlertType.SESSION_ERROR -> {
+                        anotar(alerta.message())
+                    }
+                    /*
+                     * Sem isto, um tracker que recusa a conexao nao deixa
+                     * rastro nenhum: o torrent fica em "sem seeds" e o
+                     * registro, mudo. Foi o que aconteceu.
+                     */
+                    AlertType.TRACKER_ERROR, AlertType.TRACKER_WARNING, AlertType.SCRAPE_FAILED -> {
+                        ultimoErroDeTracker = alerta.message()
                         anotar(alerta.message())
                     }
                     AlertType.TORRENT_ERROR, AlertType.FILE_ERROR -> {
@@ -830,6 +858,9 @@ class Motor(private val contexto: Context, private val config: Config) {
             .put("taxaUpload", try { s?.uploadRate() ?: 0 } catch (e: Exception) { 0 })
             .put("naFila", emFila.size)
             .put("ultimoErro", ultimoErro.ifEmpty { JSONObject.NULL })
+            .put("ultimoErroDeTracker", ultimoErroDeTracker.ifEmpty { JSONObject.NULL })
+            .put("certificados", Certificados.relatorio())
+            .put("conferindoCertificadoDoTracker", comCofreDeCertificados)
             .put("torrents", retratoDosTorrents())
     }
 }

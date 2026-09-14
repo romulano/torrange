@@ -29,10 +29,10 @@ android {
         targetSdk = 35
         // Sobe a cada APK publicado, mesmo sem mudar o versionName: e o
         // numero que o Android usa para saber o que e atualizacao.
-        // 10102: o torrent passa a entrar COM os trackers (na libtorrent 2.1
-        // eles sairam do torrent_info), o nome do arquivo volta a aparecer e o
-        // arquivo de diagnostico volta a ser gerado.
-        versionCode = 10102
+        // 10103: o OpenSSL de dentro da libtorrent passa a enxergar as
+        // autoridades certificadoras do Android -- sem elas, o anuncio no
+        // tracker https morria no aperto de mao e o download nunca comecava.
+        versionCode = 10103
         versionName = versaoDoApp
 
         ndk {
